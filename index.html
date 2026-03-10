@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Draw &amp; Bounce</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- MENU SCREEN -->
+  <div id="screen-menu" class="screen active">
+    <div class="menu-bg"></div>
+    <div class="menu-content">
+      <div class="logo">
+        <span class="logo-draw">Draw</span>
+        <span class="logo-amp">&amp;</span>
+        <span class="logo-bounce">Bounce</span>
+      </div>
+      <p class="tagline">Guide the ball to the star!</p>
+      <button id="btn-play" class="btn btn-primary btn-lg">Play</button>
+      <button id="btn-levels" class="btn btn-secondary btn-lg">Level Select</button>
+    </div>
+    <div class="menu-footer">v1.0</div>
+  </div>
+
+  <!-- LEVEL SELECT SCREEN -->
+  <div id="screen-levels" class="screen">
+    <div class="levels-header">
+      <button id="btn-back-levels" class="btn-icon" aria-label="Back">&#8592;</button>
+      <h2>Select Level</h2>
+      <button id="btn-reset-progress" class="btn-sm btn-danger" title="Reset Progress">Reset</button>
+    </div>
+    <div id="level-grid" class="level-grid"></div>
+  </div>
+
+  <!-- GAME SCREEN -->
+  <div id="screen-game" class="screen">
+    <div class="game-hud">
+      <button id="btn-hud-menu" class="btn-icon" aria-label="Menu">&#9776;</button>
+      <div class="hud-center">
+        <span id="hud-level-name" class="hud-level-name">Level 1</span>
+      </div>
+      <div class="hud-right">
+        <button id="btn-skip" class="btn-sm">Skip</button>
+      </div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <div class="game-footer">
+      <button id="btn-clear" class="btn btn-secondary">Clear Line</button>
+      <div id="status-text" class="status-text">Draw a line, then launch!</div>
+      <button id="btn-launch" class="btn btn-primary">Launch!</button>
+    </div>
+  </div>
+
+  <!-- PAUSE OVERLAY -->
+  <div id="overlay-pause" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>Paused</h2>
+      <button id="btn-resume" class="btn btn-primary">Resume</button>
+      <button id="btn-restart" class="btn btn-secondary">Restart</button>
+      <button id="btn-pause-levels" class="btn btn-secondary">Level Select</button>
+      <button id="btn-pause-menu" class="btn btn-ghost">Main Menu</button>
+    </div>
+  </div>
+
+  <!-- WIN OVERLAY -->
+  <div id="overlay-win" class="overlay hidden">
+    <div class="overlay-card win-card">
+      <div class="win-stars" id="win-stars"></div>
+      <h2>Level Complete!</h2>
+      <p id="win-level-name" class="win-subtitle"></p>
+      <button id="btn-next-level" class="btn btn-primary">Next Level</button>
+      <button id="btn-win-replay" class="btn btn-secondary">Replay</button>
+      <button id="btn-win-levels" class="btn btn-ghost">Level Select</button>
+    </div>
+  </div>
+
+  <!-- ALL DONE OVERLAY -->
+  <div id="overlay-done" class="overlay hidden">
+    <div class="overlay-card">
+      <div class="done-emoji">🎉</div>
+      <h2>You Beat All 30 Levels!</h2>
+      <p>Amazing drawing skills!</p>
+      <button id="btn-done-levels" class="btn btn-primary">Level Select</button>
+      <button id="btn-done-menu" class="btn btn-ghost">Main Menu</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>
