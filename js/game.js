@@ -97,7 +97,7 @@ class Renderer {
         ctx.shadowColor  = obs.moving ? 'rgba(180,100,255,0.5)' : 'rgba(100,100,200,0.3)';
         ctx.shadowBlur   = obs.moving ? 12 : 6;
         ctx.beginPath();
-        ctx.roundRect(obs.x, obs.y, obs.w, obs.h, 4);
+        ctx.rect(obs.x, obs.y, obs.w, obs.h);
         ctx.fill();
         ctx.stroke();
       } else if (obs.type === 'circle') {
@@ -357,6 +357,11 @@ class Game {
     this.currentScreen = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(`screen-${name}`)?.classList.add('active');
+    if (name === 'game') {
+      // Force immediate resize so canvas has correct dimensions before first frame
+      this.lastTime = null;
+      requestAnimationFrame(() => this.renderer.resize());
+    }
   }
 
   _showOverlay(name) {
@@ -420,7 +425,7 @@ class Game {
     this._levelDef   = lvl;
 
     document.getElementById('hud-level-name').textContent = `${lvl.id} · ${lvl.name}`;
-    this._setStatus('Draw a line, then Launch!');
+    this._setStatus(lvl.hint || 'Draw a line, then Launch!');
     this._hideOverlays();
   }
 
@@ -680,7 +685,7 @@ class Game {
     };
     this.obstacles  = cloneObstacles(lvl.obstacles);
     this.stuckTimer = 0;
-    this._setStatus(msg + ' Adjust your line and try again.');
+    this._setStatus(lvl.hint || 'Adjust your line and try again.');
   }
 
   // ==================== RENDER ====================
@@ -702,7 +707,6 @@ class Game {
     r.drawTrail(this.trail);
     r.drawBall(this.ball, t);
     r.drawParticles(this.particles.list);
-    r.drawHintText(this._levelDef?.hint, this.levelTime + 0.01);
   }
 }
 
