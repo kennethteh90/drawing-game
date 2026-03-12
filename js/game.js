@@ -88,21 +88,6 @@ class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  // ---- preload: load external assets via direct URL ----
-  preload() {
-    // Phaser example server assets — direct URL, no zip needed
-    // Used as fallback references; we primarily use programmatic textures
-    // but loading these means they're available as options.
-    this.load.image('ext_ball',  'https://labs.phaser.io/assets/sprites/shinyball.png');
-    this.load.image('ext_star',  'https://labs.phaser.io/assets/particles/star.png');
-    this.load.image('ext_spark', 'https://labs.phaser.io/assets/particles/blue.png');
-
-    // Suppress load errors for external assets gracefully
-    this.load.on('loaderror', (file) => {
-      console.warn('[preload] Failed to load:', file.key, file.url);
-    });
-  }
-
   // ---- called once by Phaser at boot ----
   create() {
     // Shared game state (set by Game controller before scene starts)
@@ -139,6 +124,9 @@ class GameScene extends Phaser.Scene {
     // Star rotation angle
     this._starAngle = 0;
     this._pulseT    = 0;
+
+    // Menu background pulse accumulator
+    this._menuPulseT = 0;
 
     // Pointer input — forwarded to the controller
     this.input.on('pointerdown',  ptr => this._onPointerDown(ptr));
@@ -331,7 +319,7 @@ class GameScene extends Phaser.Scene {
     if (this._ctrl) this._ctrl.onPointerUp();
   }
 
-  // ---- background: dark gradient + grid ----
+  // ---- background: dark gradient + grid + decorative ambient orbs ----
   _drawBackground() {
     const g = this.bgGfx;
     g.clear();
@@ -353,6 +341,27 @@ class GameScene extends Phaser.Scene {
       g.fillCircle(sx, sy, sr);
     }
 
+    // Decorative ambient orbs — consistent seed, low-alpha glowing circles
+    // These give the background depth without any animation cost
+    const orbRng = new Phaser.Math.RandomDataGenerator(['drawbounce-orbs']);
+    const orbData = [
+      { alpha: 0.04, color: 0x6c63ff },
+      { alpha: 0.03, color: 0xff6b9d },
+      { alpha: 0.03, color: 0x00f5ff },
+      { alpha: 0.04, color: 0x6c63ff },
+      { alpha: 0.025, color: 0xffd700 },
+      { alpha: 0.03, color: 0xff6b9d },
+      { alpha: 0.035, color: 0x00f5ff },
+      { alpha: 0.03, color: 0x6c63ff },
+    ];
+    for (const orb of orbData) {
+      const ox = orbRng.realInRange(W * 0.05, W * 0.95);
+      const oy = orbRng.realInRange(H * 0.05, H * 0.95);
+      const or = orbRng.realInRange(60, 140);
+      g.fillStyle(orb.color, orb.alpha);
+      g.fillCircle(ox, oy, or);
+    }
+
     // Grid lines
     const scaleX = W / LOGICAL_W;
     const scaleY = H / LOGICAL_H;
@@ -366,11 +375,30 @@ class GameScene extends Phaser.Scene {
     }
   }
 
+  // ---- Camera effects ----
+
+  screenShake() {
+    this.cameras.main.shake(280, 0.012);
+  }
+
+  flashWin() {
+    this.cameras.main.flash(400, 255, 255, 255, false);
+  }
+
+  fadeTransition(callback) {
+    this.cameras.main.fadeOut(200, 0, 0, 0);
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      callback();
+      this.cameras.main.fadeIn(300, 0, 0, 0);
+    });
+  }
+
   // ---- Phaser update — called every frame ----
   update(time, deltaMs) {
     if (!this._ctrl) return;
-    this._starAngle += deltaMs * 0.001 * 0.8; // rotation speed
-    this._pulseT    += deltaMs * 0.001;
+    this._starAngle  += deltaMs * 0.001 * 0.8; // rotation speed
+    this._pulseT     += deltaMs * 0.001;
+    this._menuPulseT += deltaMs * 0.001;
     this._ctrl.phaserUpdate(deltaMs / 1000);
     this._render(time / 1000);
   }
@@ -389,6 +417,20 @@ class GameScene extends Phaser.Scene {
     const cx = lx => lx * scaleX;
     const cy = ly => ly * scaleY;
     const cs = lr => lr * Math.min(scaleX, scaleY); // scale radius
+
+    // ---- Menu background subtle pulse ----
+    // When on menu screen, modulate the bgGfx overlay circle alpha based on time
+    if (ctrl.currentScreen === 'menu') {
+      // Pulse a single translucent overlay circle on top of the static bg
+      const pAlpha = 0.04 + 0.02 * Math.sin(this._menuPulseT * 0.9);
+      this.overlayGfx.clear();
+      this.overlayGfx.fillStyle(0x6c63ff, pAlpha);
+      this.overlayGfx.fillCircle(W * 0.3, H * 0.25, Math.min(W, H) * 0.45);
+      this.overlayGfx.fillStyle(0xff6b9d, pAlpha * 0.7);
+      this.overlayGfx.fillCircle(W * 0.72, H * 0.72, Math.min(W, H) * 0.38);
+    } else {
+      this.overlayGfx.clear();
+    }
 
     // ---- obstacles ----
     this.gfx.clear();
@@ -490,10 +532,10 @@ class GameScene extends Phaser.Scene {
 
         // Secondary tick marks along the shaft to show motion direction
         for (let i = 1; i <= 2; i++) {
-          const t  = i / 3;
-          const mx = startX + nx * arrowLen * t;
-          const my = startY + ny * arrowLen * t;
-          const tickAlpha = (0.3 + 0.2 * t) * pulse;
+          const tTick  = i / 3;
+          const mx = startX + nx * arrowLen * tTick;
+          const my = startY + ny * arrowLen * tTick;
+          const tickAlpha = (0.3 + 0.2 * tTick) * pulse;
           this.ballGfx.lineStyle(cs(2), 0xffcc44, tickAlpha);
           this.ballGfx.beginPath();
           this.ballGfx.moveTo(mx + perpX * cs(5), my + perpY * cs(5));
@@ -546,6 +588,14 @@ class GameScene extends Phaser.Scene {
       this._ballImage.setPosition(bx, by);
       this._ballImage.setScale(texScale);
       this._ballImage.setVisible(true);
+
+      // ---- Stuck visual warning — flash ball red when approaching stuck threshold ----
+      if (ctrl.isRunning && ctrl.stuckTimer > 2) {
+        const flash = Math.sin(this._pulseT * 20) > 0 ? 0xff3333 : 0xff6b9d;
+        this._ballImage.setTint(flash);
+      } else {
+        this._ballImage.clearTint();
+      }
     } else {
       this._ballImage.setVisible(false);
     }
@@ -601,6 +651,12 @@ class GameScene extends Phaser.Scene {
     const py = ly * (H / LOGICAL_H);
     this._particles.setPosition(px, py);
     this._particles.explode(count);
+
+    // Second burst 150ms later — same position, denser short-lived sparks
+    this.time.delayedCall(150, () => {
+      this._particles.setPosition(px, py);
+      this._particles.explode(Math.floor(count * 0.6));
+    });
   }
 
   // ---- bind controller reference ----
@@ -713,9 +769,14 @@ class Game {
         this.currentIdx = idx;
         this.state.currentLevel = idx;
         saveState(this.state);
-        this._loadLevel(idx);
         this._showScreen('game');
         this._hideOverlays();
+        // Fade transition when loading via level select
+        if (this._scene) {
+          this._scene.fadeTransition(() => this._loadLevel(idx));
+        } else {
+          this._loadLevel(idx);
+        }
       });
       grid.appendChild(cell);
     });
@@ -740,7 +801,7 @@ class Game {
     this._levelDef   = lvl;
 
     document.getElementById('hud-level-name').textContent = `${lvl.id} · ${lvl.name}`;
-    this._setStatus(lvl.hint || 'Draw a line, then Launch!');
+    this._setStatus(lvl.hint || 'Draw a line to launch!');
     this._hideOverlays();
   }
 
@@ -749,7 +810,12 @@ class Game {
   _nextLevel() {
     const next = this.currentIdx + 1;
     if (next >= LEVELS.length) { this._showOverlay('done'); return; }
-    this._loadLevel(next);
+    // Fade transition into the next level
+    if (this._scene) {
+      this._scene.fadeTransition(() => this._loadLevel(next));
+    } else {
+      this._loadLevel(next);
+    }
   }
 
   _skipLevel() {
@@ -940,10 +1006,14 @@ class Game {
     this.isRunning = false;
     markLevelComplete(this.state, this.currentIdx);
 
-    // Trigger Phaser particle burst
+    // White flash + particle burst
     if (this._scene) {
-      this._scene.emitBurst(this.target.x, this.target.y, 60);
+      this._scene.flashWin();
+      this._scene.emitBurst(this.target.x, this.target.y, 80);
     }
+
+    // Clear status text on win
+    this._setStatus('');
 
     const lvl      = LEVELS[this.currentIdx];
     document.getElementById('win-level-name').textContent = `${lvl.id} · ${lvl.name}`;
@@ -969,7 +1039,17 @@ class Game {
     this.ball        = { x: lvl.ball.x, y: lvl.ball.y, vx: lvl.ball.vx || 0, vy: lvl.ball.vy || 0, r: BALL_RADIUS };
     this.obstacles   = cloneObstacles(lvl.obstacles);
     this.stuckTimer  = 0;
+
+    // Screen shake on fail
+    if (this._scene) {
+      this._scene.screenShake();
+    }
+
+    // Flash status text red
+    const statusEl = document.getElementById('status-text');
     this._setStatus(lvl.hint || 'Adjust your line and try again.');
+    statusEl.classList.add('fail');
+    setTimeout(() => statusEl.classList.remove('fail'), 600);
   }
 }
 

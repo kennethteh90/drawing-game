@@ -1,6 +1,7 @@
 // ==================== LEVEL DEFINITIONS ====================
 // Logical coordinate space: 800 x 550
-// Ball radius: 12, Target radius: 25 (default)
+// Ball radius: 12, Target radius: varies (see each level)
+// Gravity: 450 px/s² × 2x speed multiplier = effective 900 px/s²
 // obstacle types: 'rect' {x,y,w,h}, 'circle' {cx,cy,r}
 // moving obstacles add: moving:{axis:'x'|'y', min, max, speed}
 
@@ -8,351 +9,448 @@ export const LOGICAL_W = 800;
 export const LOGICAL_H = 550;
 
 export const LEVELS = [
-  // ─── GROUP 1: Tutorial (1–5) ───
+
+  // ─── GROUP 1: Tutorial (1–5) — Very forgiving, big targets, clear intent ───
+
   {
     id: 1, name: "First Line",
-    ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 32 },
+    // Ball drops straight down. Draw any ramp near the bottom to
+    // deflect it rightward toward the huge star.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 460, r: 36 },
     obstacles: [],
-    hint: "Draw a diagonal line to redirect the ball to the star!",
+    hint: "Draw a diagonal ramp to redirect the ball to the star!",
   },
+
   {
     id: 2, name: "The Shelf",
+    // A half-width shelf blocks the direct drop.
+    // Draw a short angled line past the right end to guide ball down.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 460, r: 34 },
+    obstacles: [
+      { type: 'rect', x: 0, y: 240, w: 520, h: 18 },
+    ],
+    hint: "The shelf blocks the way — draw a ramp past its right edge!",
+  },
+
+  {
+    id: 3, name: "Redirect",
+    // Ball fires right. Shelf blocks the middle. Draw a bounce ramp
+    // on the right wall to arc it down to the target below-left.
+    ball: { x: 80, y: 80, vx: 260, vy: 0 },
+    target: { x: 100, y: 460, r: 34 },
+    obstacles: [
+      { type: 'rect', x: 0, y: 240, w: 680, h: 18 },
+    ],
+    hint: "Ball fires right — draw a ramp on the far right to bounce it back down!",
+  },
+
+  {
+    id: 4, name: "Launch Arc",
+    // Ball launches upward-right. A vertical divider cuts the space.
+    // Draw a short shelf near the top-right to catch and guide it down
+    // to the large star in the lower-right quadrant.
+    ball: { x: 80, y: 460, vx: 160, vy: -380 },
+    target: { x: 680, y: 440, r: 34 },
+    obstacles: [
+      { type: 'rect', x: 340, y: 0, w: 18, h: 300 },
+    ],
+    hint: "Ball arcs up — draw a catching ramp on the right side to guide it to the star!",
+  },
+
+  {
+    id: 5, name: "Corner Shot",
+    // A clear L-shaped barrier. The gap above the horizontal arm is
+    // the natural route. Draw a slight ramp to deflect ball rightward.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 460, r: 32 },
+    obstacles: [
+      { type: 'rect', x: 0,   y: 260, w: 460, h: 18 },
+      { type: 'rect', x: 460, y: 80,  w: 18,  h: 198 },
+    ],
+    hint: "L-shaped wall — guide the ball to the right before it reaches the corner!",
+  },
+
+  // ─── GROUP 2: Easy (6–10) — One concept introduced per level ───
+
+  {
+    id: 6, name: "The Gap",
+    // Two shelf segments leave a gap in the middle.
+    // Route the ball cleanly through the gap.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 30 },
     obstacles: [
-      { type: 'rect', x: 0, y: 240, w: 560, h: 18, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 250, w: 280, h: 18 },
+      { type: 'rect', x: 420, y: 250, w: 380, h: 18 },
     ],
-    hint: "Draw a ramp to deflect the ball past the shelf!",
-  },
-  {
-    id: 3, name: "Redirect",
-    ball: { x: 80, y: 60, vx: 250, vy: 0 },
-    target: { x: 80, y: 460, r: 30 },
-    obstacles: [
-      { type: 'rect', x: 0, y: 220, w: 700, h: 18, color: '#4a4a7a' },
-    ],
-    hint: "Bounce the ball back to the left side!",
-  },
-  {
-    id: 4, name: "High Five",
-    ball: { x: 80, y: 460, vx: 200, vy: -420 },
-    target: { x: 700, y: 80, r: 30 },
-    obstacles: [
-      { type: 'rect', x: 350, y: 0, w: 18, h: 260, color: '#4a4a7a' },
-    ],
-    hint: "The ball is launched upward — guide it past the wall!",
-  },
-  {
-    id: 5, name: "Corner Shot",
-    ball: { x: 400, y: 60, vx: 0, vy: 0 },
-    target: { x: 720, y: 480, r: 30 },
-    obstacles: [
-      { type: 'rect', x: 480, y: 200, w: 320, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 480, y: 200, w: 18, h: 220, color: '#4a4a7a' },
-    ],
-    hint: "Navigate the ball around the L-shaped wall!",
+    hint: "There's a gap in the wall — thread the ball through it!",
   },
 
-  // ─── GROUP 2: Easy (6–10) ───
   {
-    id: 6, name: "The Gap",
+    id: 7, name: "Pinball",
+    // Two round bumpers. Draw a ramp so the ball arcs between or
+    // around them down to the star on the right.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 460, r: 30 },
+    obstacles: [
+      { type: 'circle', cx: 280, cy: 200, r: 38 },
+      { type: 'circle', cx: 520, cy: 340, r: 38 },
+    ],
+    hint: "Bounce off the bumpers — or draw a path that avoids them entirely!",
+  },
+
+  {
+    id: 8, name: "Staircase",
+    // Three descending shelves offset left-to-right.
+    // Draw a staircase ramp, or thread the ball along one side.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 28 },
     obstacles: [
-      { type: 'rect', x: 0, y: 240, w: 280, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 380, y: 240, w: 420, h: 18, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 180, w: 280, h: 18 },
+      { type: 'rect', x: 260, y: 310, w: 280, h: 18 },
+      { type: 'rect', x: 520, y: 430, w: 280, h: 18 },
     ],
-    hint: "Guide the ball through the gap in the wall!",
+    hint: "Three steps block the way — bounce the ball down each gap!",
   },
-  {
-    id: 7, name: "Pinball",
-    ball: { x: 400, y: 60, vx: 0, vy: 0 },
-    target: { x: 720, y: 460, r: 28 },
-    obstacles: [
-      { type: 'circle', cx: 250, cy: 220, r: 40, color: '#3a3a6a' },
-      { type: 'circle', cx: 550, cy: 320, r: 35, color: '#3a3a6a' },
-    ],
-    hint: "Use bumpers to your advantage!",
-  },
-  {
-    id: 8, name: "Staircase",
-    ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 680, y: 460, r: 28 },
-    obstacles: [
-      { type: 'rect', x: 0,   y: 200, w: 300, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 250, y: 320, w: 300, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 500, y: 440, w: 300, h: 18, color: '#4a4a7a' },
-    ],
-    hint: "Step down the staircase!",
-  },
+
   {
     id: 9, name: "Box Escape",
-    ball: { x: 400, y: 200, vx: 0, vy: 0 },
+    // Ball starts inside an open-bottomed U-shaped enclosure.
+    // Draw a ramp to launch it out the open bottom.
+    ball: { x: 400, y: 180, vx: 0, vy: 0 },
     target: { x: 680, y: 460, r: 28 },
     obstacles: [
-      { type: 'rect', x: 200, y: 80,  w: 18, h: 300, color: '#4a4a7a' },
-      { type: 'rect', x: 200, y: 80,  w: 340, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 522, y: 80,  w: 18, h: 220, color: '#4a4a7a' },
-      // open bottom — ball can escape from below
+      { type: 'rect', x: 200, y: 60,  w: 18,  h: 320 },
+      { type: 'rect', x: 200, y: 60,  w: 380, h: 18  },
+      { type: 'rect', x: 560, y: 60,  w: 18,  h: 260 },
+      // bottom is open — ball escapes down
     ],
-    hint: "Draw a line to escape through the bottom opening!",
+    hint: "The box has an open bottom — draw a ramp to launch yourself out!",
   },
+
   {
     id: 10, name: "Zigzag",
-    ball: { x: 80, y: 60, vx: 300, vy: 0 },
-    target: { x: 80, y: 460, r: 28 },
+    // Ball fires right quickly. Two long shelves offset alternately.
+    // Draw a deflector to send it down through each gap.
+    ball: { x: 80, y: 60, vx: 280, vy: 0 },
+    target: { x: 100, y: 460, r: 28 },
     obstacles: [
-      { type: 'rect', x: 200, y: 180, w: 600, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 0,   y: 360, w: 600, h: 18, color: '#4a4a7a' },
+      { type: 'rect', x: 180, y: 190, w: 620, h: 18 },
+      { type: 'rect', x: 0,   y: 370, w: 620, h: 18 },
     ],
-    hint: "Zigzag down to the target!",
+    hint: "Ball flies right — zigzag it through the gaps in the two shelves!",
   },
 
-  // ─── GROUP 3: Medium (11–15) ───
+  // ─── GROUP 3: Medium (11–15) — Multiple obstacles, tighter spaces ───
+
   {
     id: 11, name: "The Funnel",
+    // Converging walls narrow toward the center. Target sits in middle.
+    // Draw a line near the ball to give it just enough lateral push.
     ball: { x: 400, y: 60, vx: 0, vy: 0 },
-    target: { x: 400, y: 480, r: 25 },
+    target: { x: 400, y: 480, r: 26 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 0,   w: 280, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 520, y: 0,   w: 280, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 0,   y: 200, w: 200, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 600, y: 200, w: 200, h: 18, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 160, w: 260, h: 18 },
+      { type: 'rect', x: 540, y: 160, w: 260, h: 18 },
+      { type: 'rect', x: 0,   y: 320, w: 160, h: 18 },
+      { type: 'rect', x: 640, y: 320, w: 160, h: 18 },
     ],
-    hint: "Thread the needle!",
+    hint: "The walls funnel inward — keep the ball centered as it falls!",
   },
+
   {
     id: 12, name: "Flipper",
-    ball: { x: 80, y: 60, vx: 200, vy: 0 },
-    target: { x: 80, y: 80, r: 25 },
+    // Ball launches right into a tall vertical wall, then a floor.
+    // U-shaped arena — target is back near the start but elevated.
+    // Draw a ramp against the far wall to arc it back up.
+    ball: { x: 80, y: 80, vx: 220, vy: 0 },
+    target: { x: 80, y: 100, r: 26 },
     obstacles: [
-      { type: 'rect', x: 200, y: 0,   w: 18, h: 400, color: '#4a4a7a' },
-      { type: 'rect', x: 200, y: 400, w: 600, h: 18, color: '#4a4a7a' },
+      { type: 'rect', x: 680, y: 0,   w: 18, h: 440 },
+      { type: 'rect', x: 0,   y: 420, w: 700, h: 18 },
     ],
-    hint: "Bounce back up to the star near where you started!",
+    hint: "Bounce off the far wall and back — draw a ramp to arc it home!",
   },
+
   {
     id: 13, name: "Maze Runner",
+    // A 2-bend maze. Ball must navigate two right-angle turns.
+    // Draw a line to push the ball into the correct channel.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 25 },
+    target: { x: 700, y: 460, r: 26 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 180, w: 500, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 300, y: 360, w: 500, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 500, y: 0,   w: 18, h: 180, color: '#4a4a7a' },
-      { type: 'rect', x: 300, y: 180, w: 18, h: 200, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 200, w: 480, h: 18 },
+      { type: 'rect', x: 480, y: 0,   w: 18,  h: 200 },
+      { type: 'rect', x: 320, y: 360, w: 480, h: 18 },
+      { type: 'rect', x: 320, y: 200, w: 18,  h: 180 },
     ],
-    hint: "Find the path through the maze!",
+    hint: "Follow the maze — draw a deflector to navigate each bend!",
   },
+
   {
     id: 14, name: "Bumper Field",
-    ball: { x: 80, y: 60, vx: 150, vy: 0 },
-    target: { x: 700, y: 460, r: 25 },
+    // Three bumpers in a triangle. Target at bottom-right.
+    // Draw a ramp that threads the ball between two bumpers.
+    ball: { x: 80, y: 60, vx: 180, vy: 0 },
+    target: { x: 700, y: 460, r: 26 },
     obstacles: [
-      { type: 'circle', cx: 250, cy: 180, r: 35, color: '#3a3a6a' },
-      { type: 'circle', cx: 500, cy: 260, r: 35, color: '#3a3a6a' },
-      { type: 'circle', cx: 350, cy: 380, r: 35, color: '#3a3a6a' },
+      { type: 'circle', cx: 240, cy: 200, r: 38 },
+      { type: 'circle', cx: 560, cy: 200, r: 38 },
+      { type: 'circle', cx: 400, cy: 360, r: 38 },
     ],
-    hint: "Dodge or use the bumpers!",
+    hint: "Three bumpers form a triangle — thread the ball between them!",
   },
+
   {
     id: 15, name: "The Canyon",
-    ball: { x: 400, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 25 },
+    // Two tall vertical walls create a canyon. Target is inside the
+    // canyon on the right. Ball starts outside left.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 440, r: 26 },
     obstacles: [
-      { type: 'rect', x: 280, y: 0,   w: 18, h: 420, color: '#4a4a7a' },
-      { type: 'rect', x: 520, y: 130, w: 18, h: 420, color: '#4a4a7a' },
+      { type: 'rect', x: 300, y: 0,   w: 18, h: 440 },
+      { type: 'rect', x: 500, y: 110, w: 18, h: 440 },
     ],
-    hint: "Escape the canyon — draw your line carefully!",
+    hint: "Draw a line to send the ball into the canyon gap — then let it fall!",
   },
 
-  // ─── GROUP 4: Medium-Hard (16–20) ───
+  // ─── GROUP 4: Hard (16–20) — Moving obstacles, precision required ───
+
   {
     id: 16, name: "Moving Wall",
+    // A single tall vertical panel slides horizontally.
+    // Time your line to let the ball through when the gap opens.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 25 },
+    target: { x: 700, y: 460, r: 24 },
     obstacles: [
-      { type: 'rect', x: 350, y: 100, w: 18, h: 300, color: '#6a4a9a',
-        moving: { axis: 'x', min: 200, max: 600, speed: 90 } },
+      { type: 'rect', x: 370, y: 80, w: 18, h: 360,
+        moving: { axis: 'x', min: 160, max: 580, speed: 110 } },
     ],
-    hint: "The wall moves! Time your shot or draw around it.",
-  },
-  {
-    id: 17, name: "Gauntlet",
-    ball: { x: 80, y: 60, vx: 250, vy: 0 },
-    target: { x: 700, y: 460, r: 25 },
-    obstacles: [
-      { type: 'rect', x: 200, y: 0,   w: 18, h: 320, color: '#4a4a7a' },
-      { type: 'rect', x: 400, y: 230, w: 18, h: 320, color: '#4a4a7a' },
-      { type: 'rect', x: 600, y: 0,   w: 18, h: 320, color: '#4a4a7a' },
-    ],
-    hint: "Weave through the gauntlet!",
-  },
-  {
-    id: 18, name: "Orbit",
-    ball: { x: 80, y: 280, vx: 0, vy: 0 },
-    target: { x: 720, y: 280, r: 25 },
-    obstacles: [
-      { type: 'circle', cx: 400, cy: 275, r: 120, color: '#3a3a6a' },
-    ],
-    hint: "Navigate around the big circle!",
-  },
-  {
-    id: 19, name: "Twin Movers",
-    ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 22 },
-    obstacles: [
-      { type: 'rect', x: 200, y: 150, w: 18, h: 250, color: '#6a4a9a',
-        moving: { axis: 'y', min: 80, max: 300, speed: 70 } },
-      { type: 'rect', x: 550, y: 150, w: 18, h: 250, color: '#6a4a9a',
-        moving: { axis: 'y', min: 80, max: 300, speed: 95 } },
-    ],
-    hint: "Two moving walls — find the opening!",
-  },
-  {
-    id: 20, name: "The Cross",
-    ball: { x: 80, y: 60, vx: 150, vy: 0 },
-    target: { x: 700, y: 460, r: 22 },
-    obstacles: [
-      { type: 'rect', x: 320, y: 100, w: 160, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 320, y: 340, w: 160, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 0,   y: 220, w: 320, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 480, y: 220, w: 320, h: 18, color: '#4a4a7a' },
-    ],
-    hint: "Navigate through the cross-shaped barrier!",
+    hint: "The wall moves — draw your line when the gap is on your side!",
   },
 
-  // ─── GROUP 5: Hard (21–25) ───
+  {
+    id: 17, name: "Gauntlet",
+    // Three alternating vertical walls with bottom/top openings.
+    // Ball has forward velocity. Draw a ramp to negotiate each gap.
+    ball: { x: 80, y: 60, vx: 240, vy: 0 },
+    target: { x: 700, y: 460, r: 24 },
+    obstacles: [
+      { type: 'rect', x: 200, y: 0,   w: 18, h: 300 },
+      { type: 'rect', x: 400, y: 250, w: 18, h: 300 },
+      { type: 'rect', x: 600, y: 0,   w: 18, h: 300 },
+    ],
+    hint: "Three walls alternate top/bottom gaps — weave the ball through!",
+  },
+
+  {
+    id: 18, name: "Orbit",
+    // A large circle sits in the middle. Ball and target are on
+    // opposite sides at the same height. Must arc over or under.
+    ball: { x: 80, y: 275, vx: 0, vy: 0 },
+    target: { x: 720, y: 275, r: 24 },
+    obstacles: [
+      { type: 'circle', cx: 400, cy: 275, r: 115 },
+    ],
+    hint: "Giant obstacle in the middle — draw a ramp to arc the ball above or below it!",
+  },
+
+  {
+    id: 19, name: "Twin Movers",
+    // Two vertical panels move up-and-down at different speeds.
+    // Find the window when both gaps align.
+    ball: { x: 80, y: 60, vx: 0, vy: 0 },
+    target: { x: 700, y: 460, r: 22 },
+    obstacles: [
+      { type: 'rect', x: 240, y: 100, w: 18, h: 280,
+        moving: { axis: 'y', min: 60, max: 270, speed: 80 } },
+      { type: 'rect', x: 540, y: 180, w: 18, h: 280,
+        moving: { axis: 'y', min: 60, max: 270, speed: 115 } },
+    ],
+    hint: "Two walls slide at different speeds — draw your line when both gaps open up!",
+  },
+
+  {
+    id: 20, name: "The Cross",
+    // Cross-shaped barrier with four entry arcs.
+    // Ball fires right with momentum — guide it through the correct quadrant.
+    ball: { x: 80, y: 60, vx: 160, vy: 0 },
+    target: { x: 700, y: 460, r: 22 },
+    obstacles: [
+      { type: 'rect', x: 310, y: 80,  w: 180, h: 18 },
+      { type: 'rect', x: 310, y: 360, w: 180, h: 18 },
+      { type: 'rect', x: 0,   y: 215, w: 310, h: 18 },
+      { type: 'rect', x: 490, y: 215, w: 310, h: 18 },
+    ],
+    hint: "A cross-shaped wall — go around the outside or thread the center gaps!",
+  },
+
+  // ─── GROUP 5: Very Hard (21–25) — Combinations, tight timing ───
+
   {
     id: 21, name: "Tight Squeeze",
+    // Two narrow vertical slits. The gaps are 70px wide — barely
+    // enough for the ball. Precise line placement required.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 20 },
     obstacles: [
-      { type: 'rect', x: 240, y: 0,   w: 18, h: 240, color: '#4a4a7a' },
-      { type: 'rect', x: 240, y: 310, w: 18, h: 240, color: '#4a4a7a' },
-      { type: 'rect', x: 500, y: 0,   w: 18, h: 190, color: '#4a4a7a' },
-      { type: 'rect', x: 500, y: 260, w: 18, h: 290, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 0,   w: 240, h: 18 },
+      { type: 'rect', x: 310, y: 0,   w: 490, h: 18 },
+      { type: 'rect', x: 0,   y: 290, w: 490, h: 18 },
+      { type: 'rect', x: 560, y: 290, w: 240, h: 18 },
     ],
-    hint: "Precisely thread two narrow gaps!",
+    hint: "Two narrow horizontal gaps — thread the ball through both precisely!",
   },
+
   {
     id: 22, name: "Bumper Gauntlet",
+    // Three bumpers in a row plus a shelf below.
+    // Tight corridors between them. Ball has momentum.
     ball: { x: 80, y: 60, vx: 200, vy: 0 },
     target: { x: 700, y: 460, r: 20 },
     obstacles: [
-      { type: 'circle', cx: 220, cy: 180, r: 30, color: '#3a3a6a' },
-      { type: 'circle', cx: 400, cy: 280, r: 30, color: '#3a3a6a' },
-      { type: 'circle', cx: 580, cy: 180, r: 30, color: '#3a3a6a' },
-      { type: 'rect',   x: 0,   y: 400, w: 550, h: 18, color: '#4a4a7a' },
+      { type: 'circle', cx: 230, cy: 200, r: 34 },
+      { type: 'circle', cx: 400, cy: 300, r: 34 },
+      { type: 'circle', cx: 570, cy: 200, r: 34 },
+      { type: 'rect',   x: 0,   y: 420, w: 540, h: 18 },
     ],
-    hint: "Bounce past the bumpers and over the shelf!",
-  },
-  {
-    id: 23, name: "Spiral",
-    ball: { x: 400, y: 60, vx: 0, vy: 0 },
-    target: { x: 400, y: 275, r: 22 },
-    obstacles: [
-      { type: 'rect', x: 150, y: 150, w: 500, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 150, y: 150, w: 18,  h: 220, color: '#4a4a7a' },
-      { type: 'rect', x: 150, y: 350, w: 350, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 480, y: 220, w: 18,  h: 150, color: '#4a4a7a' },
-      { type: 'rect', x: 270, y: 220, w: 230, h: 18, color: '#4a4a7a' },
-    ],
-    hint: "Guide the ball into the spiral's center!",
-  },
-  {
-    id: 24, name: "Chaos",
-    ball: { x: 80, y: 60, vx: 180, vy: 0 },
-    target: { x: 700, y: 460, r: 20 },
-    obstacles: [
-      { type: 'rect', x: 200, y: 100, w: 18, h: 200, color: '#4a4a7a' },
-      { type: 'rect', x: 400, y: 250, w: 200, h: 18, color: '#4a4a7a' },
-      { type: 'circle', cx: 320, cy: 360, r: 45, color: '#3a3a6a' },
-      { type: 'rect', x: 550, y: 100, w: 18, h: 300, color: '#4a4a7a',
-        moving: { axis: 'y', min: 50, max: 200, speed: 80 } },
-    ],
-    hint: "Navigate through the chaos!",
-  },
-  {
-    id: 25, name: "Pinpoint",
-    ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 275, r: 15 },
-    obstacles: [
-      { type: 'rect', x: 0,   y: 180, w: 600, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 200, y: 370, w: 600, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 600, y: 198, w: 18, h: 172, color: '#4a4a7a' },
-    ],
-    hint: "The target is tiny — precision is everything!",
+    hint: "Bumpers and a shelf — draw a line that threads between them all!",
   },
 
-  // ─── GROUP 6: Expert (26–30) ───
+  {
+    id: 23, name: "The Spiral",
+    // Inward-spiraling walls. Ball must enter from the top opening
+    // and reach the center target. Requires a precise curved-ish line.
+    ball: { x: 400, y: 60, vx: 0, vy: 0 },
+    target: { x: 400, y: 280, r: 22 },
+    obstacles: [
+      // Outer ring — open at top-center
+      { type: 'rect', x: 120, y: 130, w: 560, h: 18 },
+      { type: 'rect', x: 120, y: 130, w: 18,  h: 240 },
+      { type: 'rect', x: 120, y: 350, w: 380, h: 18 },
+      // Inner ring — open at right
+      { type: 'rect', x: 240, y: 210, w: 280, h: 18 },
+      { type: 'rect', x: 240, y: 210, w: 18,  h: 160 },
+      { type: 'rect', x: 240, y: 350, w: 140, h: 18 },
+    ],
+    hint: "Spiral inward — find the break in each ring and guide the ball to the center!",
+  },
+
+  {
+    id: 24, name: "Chaos",
+    // Mixed obstacle types + one mover. Requires reading the layout
+    // and placing a line that threads multiple hazards.
+    ball: { x: 80, y: 60, vx: 200, vy: 0 },
+    target: { x: 700, y: 460, r: 20 },
+    obstacles: [
+      { type: 'rect',   x: 220, y: 80,  w: 18, h: 220 },
+      { type: 'circle', cx: 380, cy: 320, r: 50 },
+      { type: 'rect',   x: 460, y: 200, w: 200, h: 18 },
+      { type: 'rect',   x: 580, y: 80,  w: 18, h: 200,
+        moving: { axis: 'y', min: 40, max: 220, speed: 90 } },
+    ],
+    hint: "Wall, bumper, shelf and a mover — read the layout and place one great line!",
+  },
+
+  {
+    id: 25, name: "Pinpoint",
+    // Small target enclosed in a narrow corridor. Ball must enter
+    // through a tight slot on the left side.
+    ball: { x: 80, y: 60, vx: 0, vy: 0 },
+    target: { x: 680, y: 275, r: 16 },
+    obstacles: [
+      { type: 'rect', x: 0,   y: 190, w: 580, h: 18 },
+      { type: 'rect', x: 200, y: 360, w: 600, h: 18 },
+      { type: 'rect', x: 580, y: 190, w: 18,  h: 190 },
+    ],
+    hint: "The target hides in a narrow slot — guide the ball in from the left opening!",
+  },
+
+  // ─── GROUP 6: Expert (26–30) — Tight puzzles, clever placement ───
+
   {
     id: 26, name: "The Gauntlet",
-    ball: { x: 80, y: 60, vx: 220, vy: 0 },
+    // Three staggered vertical barriers with a bumper near the exit.
+    // Must navigate each gap cleanly under time pressure.
+    ball: { x: 80, y: 60, vx: 230, vy: 0 },
     target: { x: 700, y: 460, r: 18 },
     obstacles: [
-      { type: 'rect', x: 180, y: 0,   w: 18, h: 280, color: '#5a2a7a' },
-      { type: 'rect', x: 360, y: 270, w: 18, h: 280, color: '#5a2a7a' },
-      { type: 'rect', x: 540, y: 0,   w: 18, h: 280, color: '#5a2a7a' },
-      { type: 'circle', cx: 270, cy: 390, r: 30, color: '#3a2060' },
+      { type: 'rect', x: 190, y: 0,   w: 18, h: 290 },
+      { type: 'rect', x: 380, y: 260, w: 18, h: 290 },
+      { type: 'rect', x: 570, y: 0,   w: 18, h: 290 },
+      { type: 'circle', cx: 280, cy: 410, r: 32 },
     ],
-    hint: "The hardest gauntlet yet!",
+    hint: "Three staggered walls and a bumper — place your line to weave through all of them!",
   },
+
   {
     id: 27, name: "Triple Movers",
+    // Three independent moving panels at different speeds.
+    // Must read the phase and draw to exploit alignment.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 18 },
     obstacles: [
-      { type: 'rect', x: 180, y: 100, w: 18, h: 200, color: '#6a3a9a',
-        moving: { axis: 'y', min: 60, max: 340, speed: 60 } },
-      { type: 'rect', x: 390, y: 200, w: 18, h: 200, color: '#6a3a9a',
-        moving: { axis: 'y', min: 60, max: 340, speed: 100 } },
-      { type: 'rect', x: 600, y: 100, w: 18, h: 200, color: '#6a3a9a',
-        moving: { axis: 'y', min: 60, max: 340, speed: 75 } },
+      { type: 'rect', x: 190, y: 80,  w: 18, h: 220,
+        moving: { axis: 'y', min: 40, max: 330, speed: 65 } },
+      { type: 'rect', x: 400, y: 200, w: 18, h: 220,
+        moving: { axis: 'y', min: 40, max: 330, speed: 105 } },
+      { type: 'rect', x: 610, y: 120, w: 18, h: 220,
+        moving: { axis: 'y', min: 40, max: 330, speed: 80 } },
     ],
-    hint: "Three moving walls stand between you and victory!",
+    hint: "Three walls move at different speeds — watch the gaps and time your launch!",
   },
+
   {
     id: 28, name: "The Labyrinth",
+    // Dense multi-path maze. Only one route leads cleanly to the target.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 18 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 140, w: 380, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 420, y: 140, w: 380, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 200, y: 280, w: 400, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 0,   y: 420, w: 250, h: 18, color: '#4a4a7a' },
-      { type: 'rect', x: 550, y: 280, w: 18,  h: 160, color: '#4a4a7a' },
-      { type: 'rect', x: 200, y: 280, w: 18,  h: 160, color: '#4a4a7a' },
+      { type: 'rect', x: 0,   y: 150, w: 360, h: 18 },
+      { type: 'rect', x: 440, y: 150, w: 360, h: 18 },
+      { type: 'rect', x: 360, y: 0,   w: 18,  h: 150 },
+      { type: 'rect', x: 180, y: 300, w: 380, h: 18 },
+      { type: 'rect', x: 180, y: 150, w: 18,  h: 168 },
+      { type: 'rect', x: 560, y: 300, w: 18,  h: 180 },
+      { type: 'rect', x: 0,   y: 440, w: 200, h: 18 },
+      { type: 'rect', x: 340, y: 440, w: 460, h: 18 },
     ],
-    hint: "The ultimate labyrinth. Find the path!",
+    hint: "The labyrinth has one clean path — study it before you draw!",
   },
+
   {
-    id: 29, name: "Bullet",
+    id: 29, name: "Bullet Run",
+    // Ball and target both at mid-height. Large circles block the
+    // center corridor top and bottom, forcing a precise S-curve path.
     ball: { x: 80, y: 275, vx: 0, vy: 0 },
     target: { x: 720, y: 275, r: 16 },
     obstacles: [
-      { type: 'circle', cx: 240, cy: 275, r: 50, color: '#3a3a6a' },
-      { type: 'circle', cx: 400, cy: 140, r: 40, color: '#3a3a6a' },
-      { type: 'circle', cx: 400, cy: 410, r: 40, color: '#3a3a6a' },
-      { type: 'circle', cx: 560, cy: 275, r: 50, color: '#3a3a6a' },
-      { type: 'rect',   x: 0,   y: 0,   w: 800, h: 80, color: '#4a4a7a' },
-      { type: 'rect',   x: 0,   y: 470, w: 800, h: 80, color: '#4a4a7a' },
+      { type: 'rect',   x: 0,   y: 0,   w: 800, h: 70  },
+      { type: 'rect',   x: 0,   y: 480, w: 800, h: 70  },
+      { type: 'circle', cx: 220, cy: 275, r: 55 },
+      { type: 'circle', cx: 400, cy: 160, r: 45 },
+      { type: 'circle', cx: 400, cy: 390, r: 45 },
+      { type: 'circle', cx: 580, cy: 275, r: 55 },
     ],
-    hint: "Thread the needle down the center!",
+    hint: "Thread the needle through the circle gauntlet — one perfect arc does it!",
   },
+
   {
     id: 30, name: "Grand Finale",
+    // Everything: three static walls, two bumpers, one moving panel.
+    // Small target. Ball has forward velocity. Every element interacts.
     ball: { x: 80, y: 60, vx: 200, vy: 0 },
     target: { x: 700, y: 460, r: 15 },
     obstacles: [
-      { type: 'rect', x: 200, y: 0,   w: 18, h: 260, color: '#5a2a7a' },
-      { type: 'rect', x: 400, y: 290, w: 18, h: 260, color: '#5a2a7a' },
-      { type: 'rect', x: 600, y: 0,   w: 18, h: 260, color: '#5a2a7a' },
-      { type: 'circle', cx: 300, cy: 380, r: 36, color: '#3a2060' },
-      { type: 'circle', cx: 500, cy: 170, r: 36, color: '#3a2060' },
-      { type: 'rect', x: 180, y: 260, w: 18, h: 200, color: '#6a3a9a',
-        moving: { axis: 'y', min: 140, max: 360, speed: 85 } },
+      { type: 'rect',   x: 200, y: 0,   w: 18, h: 280 },
+      { type: 'rect',   x: 420, y: 270, w: 18, h: 280 },
+      { type: 'rect',   x: 620, y: 0,   w: 18, h: 280 },
+      { type: 'circle', cx: 310, cy: 390, r: 36 },
+      { type: 'circle', cx: 520, cy: 160, r: 36 },
+      { type: 'rect',   x: 190, y: 260, w: 18, h: 220,
+        moving: { axis: 'y', min: 130, max: 360, speed: 90 } },
     ],
-    hint: "The Grand Finale. Everything you've learned, applied!",
+    hint: "The Grand Finale — every skill combined. One perfect line wins it all!",
   },
 ];

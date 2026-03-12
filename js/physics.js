@@ -180,7 +180,7 @@ export function stepPhysics(ball, drawnPoints, obstacles, dt) {
 // ---- Stable (stuck) detection ----
 export function isBallStuck(ball, stuckTimer) {
   const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-  return speed < 25 && stuckTimer > 2.5;
+  return speed < 25 && stuckTimer > 3.5;
 }
 
 // ---- Fall-off detection ----
