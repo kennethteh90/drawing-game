@@ -36,6 +36,8 @@ html, body {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /* Prevent Android edge-swipe back/forward gestures from interfering */
+  overscroll-behavior: none;
 }
 
 /* ==================== SCREENS ==================== */

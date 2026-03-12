@@ -1056,4 +1056,35 @@ class Game {
 // =====================================================
 //  Boot
 // =====================================================
-window.addEventListener('DOMContentLoaded', () => { new Game(); });
+window.addEventListener('DOMContentLoaded', () => {
+  const game = new Game();
+
+  // ---- Android back-gesture / back-button intercept ----
+  // Push a dummy history entry so the OS back gesture hits it first.
+  // Each time the user "goes back", we push another entry and route the
+  // action in-app rather than leaving the page.
+  history.pushState({ inGame: true }, '');
+
+  window.addEventListener('popstate', () => {
+    // Always push a new entry to keep the trap active
+    history.pushState({ inGame: true }, '');
+
+    // Route the back action contextually
+    const overlays = [...document.querySelectorAll('.overlay')].filter(
+      el => !el.classList.contains('hidden')
+    );
+    if (overlays.length > 0) {
+      // Dismiss any open overlay
+      game._hideOverlays();
+      if (game._pausedFromRunning) game.isRunning = true;
+    } else if (game.currentScreen === 'game') {
+      // In-game: treat as pause
+      game._pausedFromRunning = game.isRunning;
+      if (game.isRunning) game.isRunning = false;
+      game._showOverlay('pause');
+    } else if (game.currentScreen === 'levels') {
+      game._showScreen('menu');
+    }
+    // On menu screen: do nothing (stay in app)
+  });
+});
