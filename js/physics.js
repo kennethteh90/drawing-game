@@ -1,9 +1,9 @@
 // ==================== PHYSICS ENGINE ====================
 import { LOGICAL_W, LOGICAL_H } from './levels.js';
 
-const GRAVITY      = 700;   // px/s²
+const GRAVITY      = 450;   // px/s²
 const RESTITUTION  = 0.72;  // bounce energy retention
-const FRICTION     = 0.985; // velocity multiplier per frame (air resistance)
+const FRICTION     = 0.997; // velocity multiplier per frame (air resistance)
 const WALL_REST    = 0.65;  // canvas edge restitution
 const MIN_BOUNCE   = 40;    // min velocity to avoid micro-bounces
 const SUBSTEPS     = 4;     // physics substeps per frame

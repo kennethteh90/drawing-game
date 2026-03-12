@@ -1,16 +1,77 @@
-// ==================== MAIN GAME ====================
+// ==================== DRAW & BOUNCE — Phaser 3 Edition ====================
 import { LEVELS, LOGICAL_W, LOGICAL_H } from './levels.js';
 import { loadState, saveState, markLevelComplete, incrementAttempts, resetProgress } from './state.js';
 import { stepPhysics, updateMovingObstacles, isBallStuck, isBallOOB, isAtTarget } from './physics.js';
 
-const BALL_RADIUS   = 12;
-const TRAIL_LENGTH  = 28;
-const LINE_WIDTH    = 8;        // drawn line logical width
-const MIN_POINT_DIST = 5;       // min px between drawn points
+const BALL_RADIUS    = 12;
+const TRAIL_LENGTH   = 28;
+const LINE_WIDTH     = 8;
+const MIN_POINT_DIST = 5;
 
 // =====================================================
-//  Utility: deep clone a level's mutable parts
+//  Drawing wall-clip helpers
 // =====================================================
+
+// Returns t ∈ [0,1] of intersection of segment (ax,ay)→(bx,by) with
+// segment (cx,cy)→(dx,dy), or null if none.
+function segSegT(ax, ay, bx, by, cx, cy, dx, dy) {
+  const dxAB = bx - ax, dyAB = by - ay;
+  const dxCD = dx - cx, dyCD = dy - cy;
+  const denom = dxAB * dyCD - dyAB * dxCD;
+  if (Math.abs(denom) < 1e-10) return null;
+  const t = ((cx - ax) * dyCD - (cy - ay) * dxCD) / denom;
+  const u = ((cx - ax) * dyAB - (cy - ay) * dxAB) / denom;
+  return (t >= 0 && t <= 1 && u >= 0 && u <= 1) ? t : null;
+}
+
+// Returns first t ∈ [0,1] where segment crosses obstacle boundary, or null.
+function segObstacleT(ax, ay, bx, by, obs) {
+  if (obs.type === 'rect') {
+    const { x: rx, y: ry, w: rw, h: rh } = obs;
+    const edges = [
+      [rx,      ry,      rx + rw, ry     ],
+      [rx,      ry + rh, rx + rw, ry + rh],
+      [rx,      ry,      rx,      ry + rh],
+      [rx + rw, ry,      rx + rw, ry + rh],
+    ];
+    let minT = null;
+    for (const [ex0, ey0, ex1, ey1] of edges) {
+      const t = segSegT(ax, ay, bx, by, ex0, ey0, ex1, ey1);
+      if (t !== null && (minT === null || t < minT)) minT = t;
+    }
+    return minT;
+  }
+  if (obs.type === 'circle') {
+    const dx = bx - ax, dy = by - ay;
+    const fx = ax - obs.cx, fy = ay - obs.cy;
+    const a = dx * dx + dy * dy;
+    const b = 2 * (fx * dx + fy * dy);
+    const c = fx * fx + fy * fy - obs.r * obs.r;
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return null;
+    const sq = Math.sqrt(disc);
+    const t1 = (-b - sq) / (2 * a);
+    const t2 = (-b + sq) / (2 * a);
+    if (t1 >= 0 && t1 <= 1) return t1;
+    if (t2 >= 0 && t2 <= 1) return t2;
+    return null;
+  }
+  return null;
+}
+
+// Returns true if point (px,py) is inside obstacle.
+function pointInObstacle(px, py, obs) {
+  if (obs.type === 'rect') {
+    return px >= obs.x && px <= obs.x + obs.w && py >= obs.y && py <= obs.y + obs.h;
+  }
+  if (obs.type === 'circle') {
+    const dx = px - obs.cx, dy = py - obs.cy;
+    return dx * dx + dy * dy <= obs.r * obs.r;
+  }
+  return false;
+}
+
+// ---- deep-clone a level's mutable obstacle array ----
 function cloneObstacles(obstacles) {
   return obstacles.map(o => {
     const c = Object.assign({}, o);
@@ -20,312 +81,541 @@ function cloneObstacles(obstacles) {
 }
 
 // =====================================================
-//  Canvas scaling helpers
+//  Phaser Scene — all rendering + input
 // =====================================================
-class ScaleHelper {
-  constructor(canvas) { this.canvas = canvas; }
+class GameScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'GameScene' });
+  }
 
-  get scaleX() { return this.canvas.clientWidth  / LOGICAL_W; }
-  get scaleY() { return this.canvas.clientHeight / LOGICAL_H; }
+  // ---- preload: load external assets via direct URL ----
+  preload() {
+    // Phaser example server assets — direct URL, no zip needed
+    // Used as fallback references; we primarily use programmatic textures
+    // but loading these means they're available as options.
+    this.load.image('ext_ball',  'https://labs.phaser.io/assets/sprites/shinyball.png');
+    this.load.image('ext_star',  'https://labs.phaser.io/assets/particles/star.png');
+    this.load.image('ext_spark', 'https://labs.phaser.io/assets/particles/blue.png');
 
-  toLogical(clientX, clientY) {
-    const rect = this.canvas.getBoundingClientRect();
+    // Suppress load errors for external assets gracefully
+    this.load.on('loaderror', (file) => {
+      console.warn('[preload] Failed to load:', file.key, file.url);
+    });
+  }
+
+  // ---- called once by Phaser at boot ----
+  create() {
+    // Shared game state (set by Game controller before scene starts)
+    this.gfx        = this.add.graphics();
+    this.trailGfx   = this.add.graphics();
+    this.lineGfx    = this.add.graphics();
+    this.ballGfx    = this.add.graphics();  // kept for trail & ghost; ball itself uses Image
+    this.bgGfx      = this.add.graphics();
+    this.overlayGfx = this.add.graphics(); // for background/grid
+
+    // Depth ordering
+    this.bgGfx.setDepth(0);
+    this.gfx.setDepth(1);       // obstacles + target
+    this.lineGfx.setDepth(2);   // drawn line
+    this.trailGfx.setDepth(3);  // trail
+    this.ballGfx.setDepth(4);   // ghost ball indicator (pre-launch)
+
+    // --- Build high-quality programmatic textures via RenderTexture ---
+    this._createBallTexture();
+    this._createStarTexture();
+
+    // Ball Image object — replaces per-frame ballGfx circle drawing
+    this._ballImage = this.add.image(0, 0, 'tex_ball');
+    this._ballImage.setDepth(4);
+    this._ballImage.setBlendMode(Phaser.BlendModes.NORMAL);
+    this._ballImage.setVisible(false);
+
+    // Particle emitter (Phaser 3.60+ API)
+    this._setupParticleEmitter();
+
+    // Background drawn once (or on resize)
+    this._drawBackground();
+
+    // Star rotation angle
+    this._starAngle = 0;
+    this._pulseT    = 0;
+
+    // Pointer input — forwarded to the controller
+    this.input.on('pointerdown',  ptr => this._onPointerDown(ptr));
+    this.input.on('pointermove',  ptr => this._onPointerMove(ptr));
+    this.input.on('pointerup',    ptr => this._onPointerUp(ptr));
+    this.input.on('pointerupoutside', ptr => this._onPointerUp(ptr));
+
+    // Listen for resize so we redraw the background
+    this.scale.on('resize', () => this._drawBackground());
+
+    // ---- Phaser 3.60+ postFX — GPU-based glow & bloom ----
+    // Applied once at setup; GPU handles the rest every frame at zero CPU cost.
+
+    // Pink glow on the ball Graphics layer (used for ghost / trail halos)
+    this.ballGfx.postFX.addGlow(0xff6b9d, 16, 0, false, 0.1, 16);
+
+    // Ball Image also gets the pink glow so the sprite pops
+    this._ballImage.postFX.addGlow(0xff6b9d, 16, 0, false, 0.1, 16);
+
+    // Cyan glow on the drawn line
+    this.lineGfx.postFX.addGlow(0x00f5ff, 12, 0, false, 0.1, 12);
+
+    // Purple glow on the obstacles/target layer
+    this.gfx.postFX.addGlow(0x6c63ff, 6, 0, false, 0.1, 8);
+
+    // Subtle screen-wide bloom — makes bright spots bleed light naturally
+    this.cameras.main.postFX.addBloom(0xffffff, 1, 1, 0.5, 1.2, 10);
+  }
+
+  // ---- Create a 64×64 RenderTexture for the ball ----
+  // Radial gradient look: dark core → bright pink → transparent rim
+  _createBallTexture() {
+    const SIZE = 64;
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // Outer transparent halo (for the postFX glow to eat into)
+    g.fillStyle(0xff3070, 0.0);
+    g.fillCircle(SIZE / 2, SIZE / 2, SIZE / 2);
+
+    // Soft outer glow ring
+    g.fillStyle(0xff6b9d, 0.18);
+    g.fillCircle(SIZE / 2, SIZE / 2, SIZE / 2 - 2);
+
+    // Mid glow
+    g.fillStyle(0xff4080, 0.55);
+    g.fillCircle(SIZE / 2, SIZE / 2, SIZE / 2 - 8);
+
+    // Core body — deep magenta-red
+    g.fillStyle(0xff2060, 1.0);
+    g.fillCircle(SIZE / 2, SIZE / 2, SIZE / 2 - 14);
+
+    // Inner bright centre
+    g.fillStyle(0xff70a0, 0.8);
+    g.fillCircle(SIZE / 2 - 4, SIZE / 2 - 4, SIZE / 2 - 22);
+
+    // Specular highlight — top-left white dot
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(SIZE / 2 - 9, SIZE / 2 - 9, 7);
+
+    // Tiny crisp highlight point
+    g.fillStyle(0xffffff, 1.0);
+    g.fillCircle(SIZE / 2 - 10, SIZE / 2 - 10, 3);
+
+    const rt = this.add.renderTexture(0, 0, SIZE, SIZE);
+    rt.setVisible(false);
+    rt.draw(g, 0, 0);
+    rt.saveTexture('tex_ball');
+    g.destroy();
+    // rt stays alive as a texture source; setVisible(false) keeps it off-screen
+  }
+
+  // ---- Create a 80×80 RenderTexture for the star ----
+  // Pre-rendered gold star with baked glow so GPU postFX amplifies it.
+  _createStarTexture() {
+    const SIZE = 80;
+    const cx   = SIZE / 2;
+    const cy   = SIZE / 2;
+    const g    = this.make.graphics({ x: 0, y: 0, add: false });
+
+    // Outer diffuse glow aura
+    g.fillStyle(0xffd700, 0.06);
+    g.fillCircle(cx, cy, SIZE / 2);
+    g.fillStyle(0xffd700, 0.12);
+    g.fillCircle(cx, cy, SIZE / 2 - 8);
+    g.fillStyle(0xffe040, 0.2);
+    g.fillCircle(cx, cy, SIZE / 2 - 16);
+
+    // Draw a 5-point star
+    const outerR = SIZE / 2 - 18;
+    const innerR = outerR * 0.42;
+    const points = 5;
+    const step   = Math.PI / points;
+    const verts  = [];
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const a = i * step - Math.PI / 2;
+      verts.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+
+    // Fill star body
+    g.fillStyle(0xffd700, 1);
+    g.beginPath();
+    g.moveTo(verts[0], verts[1]);
+    for (let i = 2; i < verts.length; i += 2) g.lineTo(verts[i], verts[i + 1]);
+    g.closePath();
+    g.fillPath();
+
+    // Bright inner star slightly smaller for depth
+    g.fillStyle(0xffe87a, 1);
+    const verts2 = [];
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR * 0.75 : innerR * 0.75;
+      const a = i * step - Math.PI / 2;
+      verts2.push(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    }
+    g.beginPath();
+    g.moveTo(verts2[0], verts2[1]);
+    for (let i = 2; i < verts2.length; i += 2) g.lineTo(verts2[i], verts2[i + 1]);
+    g.closePath();
+    g.fillPath();
+
+    // Stroke outline
+    g.lineStyle(2, 0xffeea0, 1);
+    g.beginPath();
+    g.moveTo(verts[0], verts[1]);
+    for (let i = 2; i < verts.length; i += 2) g.lineTo(verts[i], verts[i + 1]);
+    g.closePath();
+    g.strokePath();
+
+    // Tiny centre highlight
+    g.fillStyle(0xffffff, 0.6);
+    g.fillCircle(cx - 3, cy - 3, 4);
+
+    const rt = this.add.renderTexture(0, 0, SIZE, SIZE);
+    rt.setVisible(false);
+    rt.draw(g, 0, 0);
+    rt.saveTexture('tex_star');
+    g.destroy();
+  }
+
+  // ---- Particle emitter using Phaser 3 ParticleEmitter ----
+  _setupParticleEmitter() {
+    // Create a soft glowing dot texture for particles
+    const g = this.make.graphics({ x: 0, y: 0, add: false });
+    // Soft outer glow
+    g.fillStyle(0xffffff, 0.3);
+    g.fillCircle(10, 10, 10);
+    // Core
+    g.fillStyle(0xffffff, 0.85);
+    g.fillCircle(10, 10, 6);
+    // Bright centre
+    g.fillStyle(0xffffff, 1.0);
+    g.fillCircle(10, 10, 3);
+    g.generateTexture('particle_dot', 20, 20);
+    g.destroy();
+
+    this._particles = this.add.particles(0, 0, 'particle_dot', {
+      speed:     { min: 80, max: 320 },
+      angle:     { min: 0, max: 360 },
+      scale:     { start: 0.5, end: 0 },
+      lifespan:  { min: 500, max: 1100 },
+      gravityY:  300,
+      tint:      [0xffd700, 0xff6b9d, 0x00f5ff, 0x6c63ff, 0xffffff],
+      blendMode: 'ADD',
+      emitting:  false,
+      frequency: -1,   // manual burst mode
+    });
+    this._particles.setDepth(5);
+  }
+
+  // ---- coordinate conversion: Phaser canvas px → logical ----
+  toLogical(phaserX, phaserY) {
+    const cam    = this.cameras.main;
+    const scaleX = cam.width  / LOGICAL_W;
+    const scaleY = cam.height / LOGICAL_H;
     return {
-      x: (clientX - rect.left) / this.scaleX,
-      y: (clientY - rect.top)  / this.scaleY,
+      x: phaserX / scaleX,
+      y: phaserY / scaleY,
     };
   }
-}
 
-// =====================================================
-//  Renderer
-// =====================================================
-class Renderer {
-  constructor(canvas, ctx, scaler) {
-    this.canvas = canvas;
-    this.ctx    = ctx;
-    this.scaler = scaler;
-    this._starPath = this._buildStar(5, 1, 0.42);
+  // ---- pointer handlers (forward to controller) ----
+  _onPointerDown(ptr) {
+    if (this._ctrl) this._ctrl.onPointerDown(ptr.x, ptr.y);
+  }
+  _onPointerMove(ptr) {
+    if (this._ctrl) this._ctrl.onPointerMove(ptr.x, ptr.y);
+  }
+  _onPointerUp(ptr) {
+    if (this._ctrl) this._ctrl.onPointerUp();
   }
 
-  resize() {
-    const dpr = window.devicePixelRatio || 1;
-    const w   = this.canvas.clientWidth;
-    const h   = this.canvas.clientHeight;
-    this.canvas.width  = w * dpr;
-    this.canvas.height = h * dpr;
-    this.ctx.scale(dpr * this.scaler.scaleX, dpr * this.scaler.scaleY);
-  }
+  // ---- background: dark gradient + grid ----
+  _drawBackground() {
+    const g = this.bgGfx;
+    g.clear();
 
-  clear() {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    ctx.restore();
+    const W = this.scale.width;
+    const H = this.scale.height;
 
-    // Background gradient
-    const grad = ctx.createLinearGradient(0, 0, 0, LOGICAL_H);
-    grad.addColorStop(0, '#0d0d1a');
-    grad.addColorStop(1, '#14142a');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+    // Dark background fill
+    g.fillGradientStyle(0x0d0d1a, 0x0d0d1a, 0x14142a, 0x14142a, 1);
+    g.fillRect(0, 0, W, H);
 
-    // Subtle grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-    ctx.lineWidth   = 1;
-    const gridSize  = 50;
-    for (let x = gridSize; x < LOGICAL_W; x += gridSize) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, LOGICAL_H); ctx.stroke();
+    // Subtle starfield
+    g.fillStyle(0xffffff, 0.25);
+    const rng = new Phaser.Math.RandomDataGenerator(['drawbounce-bg']);
+    for (let i = 0; i < 120; i++) {
+      const sx = rng.realInRange(0, W);
+      const sy = rng.realInRange(0, H);
+      const sr = rng.realInRange(0.5, 1.5);
+      g.fillCircle(sx, sy, sr);
     }
-    for (let y = gridSize; y < LOGICAL_H; y += gridSize) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(LOGICAL_W, y); ctx.stroke();
+
+    // Grid lines
+    const scaleX = W / LOGICAL_W;
+    const scaleY = H / LOGICAL_H;
+    const gridSz = 50;
+    g.lineStyle(1, 0xffffff, 0.03);
+    for (let lx = gridSz; lx < LOGICAL_W; lx += gridSz) {
+      g.lineBetween(lx * scaleX, 0, lx * scaleX, H);
+    }
+    for (let ly = gridSz; ly < LOGICAL_H; ly += gridSz) {
+      g.lineBetween(0, ly * scaleY, W, ly * scaleY);
     }
   }
 
-  drawObstacles(obstacles, t) {
-    const ctx = this.ctx;
-    for (const obs of obstacles) {
-      ctx.save();
+  // ---- Phaser update — called every frame ----
+  update(time, deltaMs) {
+    if (!this._ctrl) return;
+    this._starAngle += deltaMs * 0.001 * 0.8; // rotation speed
+    this._pulseT    += deltaMs * 0.001;
+    this._ctrl.phaserUpdate(deltaMs / 1000);
+    this._render(time / 1000);
+  }
+
+  // ---- main render ----
+  _render(t) {
+    const ctrl = this._ctrl;
+    if (!ctrl || !ctrl.ball) return;
+
+    const W      = this.scale.width;
+    const H      = this.scale.height;
+    const scaleX = W / LOGICAL_W;
+    const scaleY = H / LOGICAL_H;
+
+    // helper: logical → canvas
+    const cx = lx => lx * scaleX;
+    const cy = ly => ly * scaleY;
+    const cs = lr => lr * Math.min(scaleX, scaleY); // scale radius
+
+    // ---- obstacles ----
+    this.gfx.clear();
+    for (const obs of ctrl.obstacles) {
       if (obs.type === 'rect') {
-        const pulse = obs.moving ? 0.7 + 0.3 * Math.sin(t * 3) : 1;
-        ctx.fillStyle   = obs.color || '#4a4a7a';
-        ctx.strokeStyle = obs.moving
-          ? `rgba(180,100,255,${pulse})`
-          : 'rgba(120,120,180,0.6)';
-        ctx.lineWidth  = 2;
-        ctx.shadowColor  = obs.moving ? 'rgba(180,100,255,0.5)' : 'rgba(100,100,200,0.3)';
-        ctx.shadowBlur   = obs.moving ? 12 : 6;
-        ctx.beginPath();
-        ctx.rect(obs.x, obs.y, obs.w, obs.h);
-        ctx.fill();
-        ctx.stroke();
+        const pulse = obs.moving ? 0.7 + 0.3 * Math.sin(this._pulseT * 3) : 1;
+        const baseColor  = obs.moving ? 0x6a3a9a : 0x3c3c6e;
+        const glowColor  = obs.moving ? 0xb464ff : 0x6060c0;
+        const glowAlpha  = obs.moving ? pulse * 0.9 : 0.5;
+
+        // Glow halo (slightly larger rect, low alpha)
+        // postFX on gfx handles the actual GPU glow, so keep this subtle
+        this.gfx.fillStyle(glowColor, glowAlpha * 0.2);
+        this.gfx.fillRect(cx(obs.x) - 3, cy(obs.y) - 3, cx(obs.x + obs.w) - cx(obs.x) + 6, cy(obs.y + obs.h) - cy(obs.y) + 6);
+
+        // Body
+        this.gfx.fillStyle(baseColor, 1);
+        this.gfx.fillRect(cx(obs.x), cy(obs.y), cx(obs.x + obs.w) - cx(obs.x), cy(obs.y + obs.h) - cy(obs.y));
+
+        // Border
+        this.gfx.lineStyle(2, glowColor, glowAlpha);
+        this.gfx.strokeRect(cx(obs.x), cy(obs.y), cx(obs.x + obs.w) - cx(obs.x), cy(obs.y + obs.h) - cy(obs.y));
+
       } else if (obs.type === 'circle') {
-        ctx.fillStyle   = obs.color || '#3a3a6a';
-        ctx.strokeStyle = 'rgba(120,120,200,0.6)';
-        ctx.lineWidth   = 2;
-        ctx.shadowColor = 'rgba(100,100,255,0.4)';
-        ctx.shadowBlur  = 10;
-        ctx.beginPath();
-        ctx.arc(obs.cx, obs.cy, obs.r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        const r = cs(obs.r);
+        // Glow halo (reduced since postFX handles the real glow)
+        this.gfx.fillStyle(0x6060c8, 0.10);
+        this.gfx.fillCircle(cx(obs.cx), cy(obs.cy), r + 6);
+        // Body
+        this.gfx.fillStyle(0x2e2e5e, 1);
+        this.gfx.fillCircle(cx(obs.cx), cy(obs.cy), r);
+        // Border
+        this.gfx.lineStyle(2, 0x6868c8, 0.7);
+        this.gfx.strokeCircle(cx(obs.cx), cy(obs.cy), r);
       }
-      ctx.restore();
     }
-  }
 
-  drawTarget(target, t) {
-    const ctx  = this.ctx;
-    const pulse = 0.92 + 0.08 * Math.sin(t * 3);
-    ctx.save();
-    ctx.translate(target.x, target.y);
-    ctx.scale(pulse, pulse);
+    // ---- target star — drawn via gfx using the pre-baked tex_star ----
+    // We draw the star manually so it rotates; the GPU glow on gfx amplifies it.
+    const tgt    = ctrl.target;
+    const tPulse = 0.92 + 0.08 * Math.sin(this._pulseT * 3);
+    const tr     = cs(tgt.r) * tPulse;
+    const tx     = cx(tgt.x);
+    const ty     = cy(tgt.y);
 
-    // Glow rings
-    const glowGrad = ctx.createRadialGradient(0, 0, target.r * 0.3, 0, 0, target.r * 1.8);
-    glowGrad.addColorStop(0, 'rgba(255,215,0,0.3)');
-    glowGrad.addColorStop(1, 'rgba(255,215,0,0)');
-    ctx.fillStyle = glowGrad;
-    ctx.beginPath();
-    ctx.arc(0, 0, target.r * 1.8, 0, Math.PI * 2);
-    ctx.fill();
+    // Soft aura — kept minimal since postFX glow handles blooming
+    this.gfx.fillStyle(0xffd700, 0.06);
+    this.gfx.fillCircle(tx, ty, tr * 2.0);
+    this.gfx.fillStyle(0xffd700, 0.10);
+    this.gfx.fillCircle(tx, ty, tr * 1.5);
 
-    // Star
-    ctx.rotate(t * 0.8);
-    ctx.shadowColor = '#ffd700';
-    ctx.shadowBlur  = 18;
-    ctx.fillStyle   = '#ffd700';
-    ctx.strokeStyle = '#ffe87a';
-    ctx.lineWidth   = 2;
-    this._drawStar(ctx, target.r);
-    ctx.fill();
-    ctx.stroke();
+    // Rotating star polygon drawn directly on gfx (so it gets the purple glow postFX)
+    this._drawStar(this.gfx, tx, ty, tr, 5, 0.42, this._starAngle, 0xffd700, 0xffe87a);
 
-    ctx.restore();
-  }
+    // ---- ghost ball + launch arrow (before launch) ----
+    this.ballGfx.clear();
+    if (!ctrl.isRunning && !ctrl.won) {
+      const lvlBall = ctrl._levelDef.ball;
+      const bx = cx(lvlBall.x);
+      const by = cy(lvlBall.y);
+      const br = cs(BALL_RADIUS);
 
-  _buildStar(points, outer, innerRatio) {
-    const path = [];
-    const step  = Math.PI / points;
-    for (let i = 0; i < points * 2; i++) {
-      const r    = i % 2 === 0 ? outer : outer * innerRatio;
-      const angle = i * step - Math.PI / 2;
-      path.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r });
+      // Ghost circle
+      this.ballGfx.fillStyle(0xff6b9d, 0.12);
+      this.ballGfx.fillCircle(bx, by, br);
+      this.ballGfx.lineStyle(2, 0xff6b9d, 0.4);
+      this._drawDashedCircle(this.ballGfx, bx, by, br);
+
+      // Arrow indicator — only when ball has initial velocity
+      const initSpeed = Math.hypot(lvlBall.vx || 0, lvlBall.vy || 0);
+      if (initSpeed > 0) {
+        const nx = (lvlBall.vx || 0) / initSpeed;
+        const ny = (lvlBall.vy || 0) / initSpeed;
+        const pulse = 0.75 + 0.25 * Math.sin(this._pulseT * 5);
+        const arrowLen = cs(52) * pulse;
+        const headLen  = cs(14);
+        const startX   = bx + nx * (br + cs(4));
+        const startY   = by + ny * (br + cs(4));
+        const tipX     = startX + nx * arrowLen;
+        const tipY     = startY + ny * arrowLen;
+        const perpX    = -ny;
+        const perpY    =  nx;
+
+        // Shaft
+        this.ballGfx.lineStyle(cs(3), 0xffaa00, 0.85 * pulse);
+        this.ballGfx.beginPath();
+        this.ballGfx.moveTo(startX, startY);
+        this.ballGfx.lineTo(tipX - nx * headLen, tipY - ny * headLen);
+        this.ballGfx.strokePath();
+
+        // Arrowhead
+        this.ballGfx.fillStyle(0xffaa00, 0.9 * pulse);
+        this.ballGfx.beginPath();
+        this.ballGfx.moveTo(tipX, tipY);
+        this.ballGfx.lineTo(tipX - nx * headLen + perpX * headLen * 0.5, tipY - ny * headLen + perpY * headLen * 0.5);
+        this.ballGfx.lineTo(tipX - nx * headLen - perpX * headLen * 0.5, tipY - ny * headLen - perpY * headLen * 0.5);
+        this.ballGfx.closePath();
+        this.ballGfx.fillPath();
+
+        // Secondary tick marks along the shaft to show motion direction
+        for (let i = 1; i <= 2; i++) {
+          const t  = i / 3;
+          const mx = startX + nx * arrowLen * t;
+          const my = startY + ny * arrowLen * t;
+          const tickAlpha = (0.3 + 0.2 * t) * pulse;
+          this.ballGfx.lineStyle(cs(2), 0xffcc44, tickAlpha);
+          this.ballGfx.beginPath();
+          this.ballGfx.moveTo(mx + perpX * cs(5), my + perpY * cs(5));
+          this.ballGfx.lineTo(mx - perpX * cs(5), my - perpY * cs(5));
+          this.ballGfx.strokePath();
+        }
+      }
     }
-    return path;
-  }
 
-  _drawStar(ctx, radius) {
-    const pts   = this._starPath;
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x * radius, pts[0].y * radius);
-    for (let i = 1; i < pts.length; i++) {
-      ctx.lineTo(pts[i].x * radius, pts[i].y * radius);
+    // ---- drawn line ----
+    // postFX addGlow on lineGfx handles the actual neon bloom;
+    // just draw one clean bright line — no manual multi-pass glow needed.
+    this.lineGfx.clear();
+    const pts = ctrl.drawnPoints;
+    if (pts.length >= 2) {
+      // Single clean bright line — GPU postFX provides the glow halo
+      this.lineGfx.lineStyle(
+        LINE_WIDTH * scaleX,
+        ctrl.isDrawing ? 0xc8ffff : 0xe0ffff,
+        ctrl.isDrawing ? 0.80 : 1.0
+      );
+      this.lineGfx.beginPath();
+      this.lineGfx.moveTo(cx(pts[0].x), cy(pts[0].y));
+      for (let i = 1; i < pts.length; i++) {
+        this.lineGfx.lineTo(cx(pts[i].x), cy(pts[i].y));
+      }
+      this.lineGfx.strokePath();
     }
-    ctx.closePath();
-  }
 
-  drawBallStart(levelBall) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.fillStyle   = 'rgba(255,107,157,0.18)';
-    ctx.strokeStyle = 'rgba(255,107,157,0.5)';
-    ctx.lineWidth   = 2;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.arc(levelBall.x, levelBall.y, BALL_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  drawTrail(trail) {
-    if (trail.length < 2) return;
-    const ctx = this.ctx;
-    ctx.save();
+    // ---- trail ----
+    this.trailGfx.clear();
+    const trail = ctrl.trail;
     for (let i = 1; i < trail.length; i++) {
-      const alpha = (i / trail.length) * 0.6;
-      const r     = BALL_RADIUS * (i / trail.length) * 0.7;
-      ctx.fillStyle = `rgba(255,107,157,${alpha})`;
-      ctx.beginPath();
-      ctx.arc(trail[i].x, trail[i].y, r, 0, Math.PI * 2);
-      ctx.fill();
+      const alpha = (i / trail.length) * 0.50;
+      const r     = cs(BALL_RADIUS * (i / trail.length) * 0.60);
+      this.trailGfx.fillStyle(0xff6b9d, alpha);
+      this.trailGfx.fillCircle(cx(trail[i].x), cy(trail[i].y), r);
     }
-    ctx.restore();
-  }
 
-  drawBall(ball, t) {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.shadowColor = '#ff6b9d';
-    ctx.shadowBlur  = 16;
+    // ---- ball — use pre-baked Image instead of per-frame Graphics ----
+    if (ctrl.ball) {
+      const bx = cx(ctrl.ball.x);
+      const by = cy(ctrl.ball.y);
+      const br = cs(BALL_RADIUS);
 
-    const grad = ctx.createRadialGradient(
-      ball.x - BALL_RADIUS * 0.3, ball.y - BALL_RADIUS * 0.3, BALL_RADIUS * 0.1,
-      ball.x, ball.y, BALL_RADIUS
-    );
-    grad.addColorStop(0, '#ffb3cc');
-    grad.addColorStop(1, '#ff3070');
+      // Scale the 64×64 texture to match the desired display radius
+      const desiredDiameter = br * 2.6; // slightly larger than logical radius for the glow rim
+      const texScale = desiredDiameter / 64;
 
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  drawLine(points, isDrawing) {
-    if (points.length < 2) return;
-    const ctx = this.ctx;
-    ctx.save();
-
-    // Glow pass
-    ctx.shadowColor = '#00f5ff';
-    ctx.shadowBlur  = 12;
-    ctx.strokeStyle = isDrawing ? 'rgba(0,245,255,0.5)' : '#00f5ff';
-    ctx.lineWidth   = LINE_WIDTH * 1.5;
-    ctx.lineCap     = 'round';
-    ctx.lineJoin    = 'round';
-    ctx.beginPath();
-    ctx.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) {
-      ctx.lineTo(points[i].x, points[i].y);
+      this._ballImage.setPosition(bx, by);
+      this._ballImage.setScale(texScale);
+      this._ballImage.setVisible(true);
+    } else {
+      this._ballImage.setVisible(false);
     }
-    ctx.stroke();
-
-    // Core line
-    ctx.shadowBlur  = 0;
-    ctx.strokeStyle = isDrawing ? 'rgba(200,255,255,0.8)' : '#e0ffff';
-    ctx.lineWidth   = LINE_WIDTH;
-    ctx.stroke();
-
-    ctx.restore();
   }
 
-  drawParticles(particles) {
-    const ctx = this.ctx;
-    ctx.save();
-    for (const p of particles) {
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur  = 8;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fill();
+  // ---- draw a star polygon ----
+  _drawStar(gfx, x, y, outerR, points, innerRatio, angle, fillColor, strokeColor) {
+    const step = Math.PI / points;
+    const verts = [];
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : outerR * innerRatio;
+      const a = i * step - Math.PI / 2 + angle;
+      verts.push(x + Math.cos(a) * r, y + Math.sin(a) * r);
     }
-    ctx.globalAlpha = 1;
-    ctx.restore();
+
+    gfx.fillStyle(fillColor, 1);
+    gfx.beginPath();
+    gfx.moveTo(verts[0], verts[1]);
+    for (let i = 2; i < verts.length; i += 2) {
+      gfx.lineTo(verts[i], verts[i + 1]);
+    }
+    gfx.closePath();
+    gfx.fillPath();
+
+    gfx.lineStyle(2, strokeColor, 1);
+    gfx.beginPath();
+    gfx.moveTo(verts[0], verts[1]);
+    for (let i = 2; i < verts.length; i += 2) {
+      gfx.lineTo(verts[i], verts[i + 1]);
+    }
+    gfx.closePath();
+    gfx.strokePath();
   }
 
-  drawHintText(text, t) {
-    if (!text) return;
-    const ctx = this.ctx;
-    const alpha = Math.min(1, t < 1 ? t : Math.max(0, 4 - t));
-    if (alpha <= 0) return;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle   = 'rgba(255,255,255,0.9)';
-    ctx.font        = `bold 15px 'Segoe UI', system-ui, sans-serif`;
-    ctx.textAlign   = 'center';
-    ctx.shadowColor = '#000';
-    ctx.shadowBlur  = 8;
-    ctx.fillText(text, LOGICAL_W / 2, LOGICAL_H - 18);
-    ctx.restore();
+  // ---- dashed circle helper ----
+  _drawDashedCircle(gfx, x, y, r) {
+    const SEGS   = 16;
+    const step   = (Math.PI * 2) / SEGS;
+    for (let i = 0; i < SEGS; i += 2) {
+      const a0 = i * step;
+      const a1 = (i + 1) * step;
+      gfx.beginPath();
+      gfx.arc(x, y, r, a0, a1, false, 0.05);
+      gfx.strokePath();
+    }
+  }
+
+  // ---- burst particles at logical coords ----
+  emitBurst(lx, ly, count) {
+    const W = this.scale.width;
+    const H = this.scale.height;
+    const px = lx * (W / LOGICAL_W);
+    const py = ly * (H / LOGICAL_H);
+    this._particles.setPosition(px, py);
+    this._particles.explode(count);
+  }
+
+  // ---- bind controller reference ----
+  setController(ctrl) {
+    this._ctrl = ctrl;
   }
 }
 
 // =====================================================
-//  Particle System
-// =====================================================
-class Particles {
-  constructor() { this.list = []; }
-
-  emit(x, y, count = 20) {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 100 + Math.random() * 250;
-      const colors = ['#ffd700', '#ff6b9d', '#00f5ff', '#6c63ff', '#ffffff'];
-      this.list.push({
-        x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        r:  2 + Math.random() * 4,
-        alpha: 1,
-        color: colors[Math.floor(Math.random() * colors.length)],
-        life: 0,
-        maxLife: 0.6 + Math.random() * 0.6,
-      });
-    }
-  }
-
-  update(dt) {
-    this.list = this.list.filter(p => p.life < p.maxLife);
-    for (const p of this.list) {
-      p.life += dt;
-      p.x    += p.vx * dt;
-      p.y    += p.vy * dt;
-      p.vy   += 300 * dt; // gravity
-      p.alpha = 1 - p.life / p.maxLife;
-    }
-  }
-}
-
-// =====================================================
-//  Game Class
+//  Game Controller — orchestrates all game logic
 // =====================================================
 class Game {
   constructor() {
-    this.canvas   = document.getElementById('game-canvas');
-    this.ctx      = this.canvas.getContext('2d');
-    this.scaler   = new ScaleHelper(this.canvas);
-    this.renderer = new Renderer(this.canvas, this.ctx, this.scaler);
-    this.particles = new Particles();
-
-    this.state        = loadState();
-    this.currentIdx   = this.state.currentLevel || 0;
+    this.state      = loadState();
+    this.currentIdx = this.state.currentLevel || 0;
 
     // Game state
     this.ball         = null;
@@ -337,30 +627,60 @@ class Game {
     this.won          = false;
     this.stuckTimer   = 0;
     this.levelTime    = 0;
+    this._levelDef    = null;
+    this.target       = null;
 
-    this.lastTime     = null;
-    this.animFrame    = null;
     this.currentScreen = 'menu';
+    this._pausedFromRunning = false;
 
+    // Phaser game instance — sized to match #phaser-container
+    this._phaser = null;
+    this._scene  = null;
+
+    this._initPhaser();
     this._bindUI();
-    this._bindInput();
-    this._onResize();
-    window.addEventListener('resize', () => this._onResize());
-
-    this._showScreen('menu');
     this._buildLevelGrid();
-    this._loop(0);
+    this._showScreen('menu');
   }
 
-  // ==================== SCREENS ====================
+  // ---- boot Phaser ----
+  _initPhaser() {
+    const container = document.getElementById('phaser-container');
+
+    this._phaser = new Phaser.Game({
+      type:            Phaser.AUTO,
+      parent:          'phaser-container',
+      backgroundColor: '#0d0d1a',
+      scale: {
+        mode:       Phaser.Scale.RESIZE,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width:      '100%',
+        height:     '100%',
+      },
+      scene:  GameScene,
+      banner: false,
+      audio:  { noAudio: true },
+    });
+
+    // Grab the scene once Phaser is ready
+    this._phaser.events.once('ready', () => {
+      this._scene = this._phaser.scene.getScene('GameScene');
+      this._scene.setController(this);
+    });
+  }
+
+  // ---- screen management ----
   _showScreen(name) {
     this.currentScreen = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(`screen-${name}`)?.classList.add('active');
+
     if (name === 'game') {
-      // Force immediate resize so canvas has correct dimensions before first frame
-      this.lastTime = null;
-      requestAnimationFrame(() => this.renderer.resize());
+      // Let Phaser re-measure its container after CSS transition
+      setTimeout(() => {
+        this._phaser?.scale.refresh();
+        if (this._scene) this._scene._drawBackground();
+      }, 50);
     }
   }
 
@@ -374,7 +694,7 @@ class Game {
     document.querySelectorAll('.overlay').forEach(o => o.classList.add('hidden'));
   }
 
-  // ==================== LEVEL GRID ====================
+  // ---- level grid ----
   _buildLevelGrid() {
     const grid = document.getElementById('level-grid');
     grid.innerHTML = '';
@@ -384,7 +704,6 @@ class Game {
       const completed = this.state.completed.includes(idx);
       if (completed) cell.classList.add('completed');
       if (idx === this.currentIdx) cell.classList.add('current');
-
       cell.innerHTML = `
         <span class="level-num">${lvl.id}</span>
         <span class="level-star">${completed ? '★' : ''}</span>
@@ -402,19 +721,15 @@ class Game {
     });
   }
 
-  // ==================== LEVEL LOADING ====================
+  // ---- level load / reset ----
   _loadLevel(idx) {
-    const lvl    = LEVELS[idx];
+    const lvl = LEVELS[idx];
     this.currentIdx = idx;
     this.state.currentLevel = idx;
     saveState(this.state);
 
-    this.obstacles = cloneObstacles(lvl.obstacles);
-    this.ball = {
-      x:  lvl.ball.x, y:  lvl.ball.y,
-      vx: lvl.ball.vx || 0, vy: lvl.ball.vy || 0,
-      r:  BALL_RADIUS,
-    };
+    this.obstacles   = cloneObstacles(lvl.obstacles);
+    this.ball        = { x: lvl.ball.x, y: lvl.ball.y, vx: lvl.ball.vx || 0, vy: lvl.ball.vy || 0, r: BALL_RADIUS };
     this.target      = { ...lvl.target };
     this.drawnPoints = [];
     this.trail       = [];
@@ -429,16 +744,11 @@ class Game {
     this._hideOverlays();
   }
 
-  _resetLevel() {
-    this._loadLevel(this.currentIdx);
-  }
+  _resetLevel() { this._loadLevel(this.currentIdx); }
 
   _nextLevel() {
     const next = this.currentIdx + 1;
-    if (next >= LEVELS.length) {
-      this._showOverlay('done');
-      return;
-    }
+    if (next >= LEVELS.length) { this._showOverlay('done'); return; }
     this._loadLevel(next);
   }
 
@@ -451,48 +761,55 @@ class Game {
     document.getElementById('status-text').textContent = text;
   }
 
-  // ==================== INPUT ====================
-  _bindInput() {
-    const canvas = this.canvas;
+  // ---- pointer input handlers (called by Phaser scene) ----
+  onPointerDown(px, py) {
+    if (this.currentScreen !== 'game') return;
+    if (!this.isRunning && !this.won) {
+      const p = this._scene.toLogical(px, py);
+      // Don't start drawing inside a wall
+      if (this.obstacles.some(obs => pointInObstacle(p.x, p.y, obs))) return;
+      this.isDrawing   = true;
+      this.drawnPoints = [];
+      this.drawnPoints.push(p);
+    }
+  }
 
-    const onStart = (x, y) => {
-      if (!this.isRunning && !this.won) {
-        this.isDrawing   = true;
-        this.drawnPoints = [];
-        const p = this.scaler.toLogical(x, y);
-        this.drawnPoints.push(p);
-      }
-    };
-    const onMove = (x, y) => {
-      if (this.isDrawing && !this.isRunning) {
-        const p    = this.scaler.toLogical(x, y);
-        const last = this.drawnPoints[this.drawnPoints.length - 1];
-        const dx   = p.x - last.x, dy = p.y - last.y;
-        if (dx * dx + dy * dy > MIN_POINT_DIST * MIN_POINT_DIST) {
+  onPointerMove(px, py) {
+    if (this.currentScreen !== 'game') return;
+    if (this.isDrawing && !this.isRunning) {
+      const p    = this._scene.toLogical(px, py);
+      const last = this.drawnPoints[this.drawnPoints.length - 1];
+      const dx   = p.x - last.x;
+      const dy   = p.y - last.y;
+      if (dx * dx + dy * dy > MIN_POINT_DIST * MIN_POINT_DIST) {
+        // Find first wall hit along this mini-segment
+        let minT = null;
+        for (const obs of this.obstacles) {
+          const t = segObstacleT(last.x, last.y, p.x, p.y, obs);
+          if (t !== null && (minT === null || t < minT)) minT = t;
+        }
+        if (minT !== null) {
+          // Clip to the wall edge and stop drawing
+          this.drawnPoints.push({ x: last.x + (p.x - last.x) * minT, y: last.y + (p.y - last.y) * minT });
+          this.isDrawing = false;
+        } else {
           this.drawnPoints.push(p);
         }
       }
-    };
-    const onEnd = () => { this.isDrawing = false; };
-
-    canvas.addEventListener('mousedown',  e => { e.preventDefault(); onStart(e.clientX, e.clientY); });
-    canvas.addEventListener('mousemove',  e => { e.preventDefault(); onMove (e.clientX, e.clientY); });
-    canvas.addEventListener('mouseup',    e => { e.preventDefault(); onEnd(); });
-    canvas.addEventListener('mouseleave', e => { onEnd(); });
-
-    canvas.addEventListener('touchstart', e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      onStart(t.clientX, t.clientY);
-    }, { passive: false });
-    canvas.addEventListener('touchmove', e => {
-      e.preventDefault();
-      const t = e.touches[0];
-      onMove(t.clientX, t.clientY);
-    }, { passive: false });
-    canvas.addEventListener('touchend', e => { e.preventDefault(); onEnd(); }, { passive: false });
+    }
   }
 
+  onPointerUp() {
+    if (this.currentScreen !== 'game') return;
+    if (this.isDrawing && !this.isRunning && !this.won && this.drawnPoints.length >= 2) {
+      incrementAttempts(this.state, this.currentIdx);
+      this.isRunning = true;
+      this._setStatus('');
+    }
+    this.isDrawing = false;
+  }
+
+  // ---- UI bindings ----
   _bindUI() {
     // Menu
     document.getElementById('btn-play').addEventListener('click', () => {
@@ -516,30 +833,21 @@ class Game {
 
     // Game HUD
     document.getElementById('btn-hud-menu').addEventListener('click', () => {
-      if (this.isRunning) this._pausePhysics();
+      this._pausedFromRunning = this.isRunning;
+      if (this.isRunning) this.isRunning = false;
       this._showOverlay('pause');
     });
     document.getElementById('btn-skip').addEventListener('click', () => this._skipLevel());
 
-    // Game footer
-    document.getElementById('btn-clear').addEventListener('click', () => {
-      if (!this.isRunning) {
-        this.drawnPoints = [];
-        this._setStatus('Line cleared. Draw again!');
-      }
-    });
-    document.getElementById('btn-launch').addEventListener('click', () => {
-      if (!this.won && !this.isRunning) {
-        incrementAttempts(this.state, this.currentIdx);
-        this.isRunning = true;
-        this._setStatus('');
-      }
+    // HUD right
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      this._resetLevel();
     });
 
     // Pause overlay
     document.getElementById('btn-resume').addEventListener('click', () => {
       this._hideOverlays();
-      this.isRunning = true;
+      if (this._pausedFromRunning) this.isRunning = true;
     });
     document.getElementById('btn-restart').addEventListener('click', () => {
       this._hideOverlays();
@@ -582,33 +890,14 @@ class Game {
     });
   }
 
-  _pausePhysics() { this.isRunning = false; }
+  // ---- phaserUpdate — called every Phaser frame via scene.update ----
+  phaserUpdate(rawDt) {
+    if (this.currentScreen !== 'game') return;
 
-  // ==================== RESIZE ====================
-  _onResize() {
-    if (this.currentScreen === 'game') {
-      this.renderer.resize();
-    }
-  }
-
-  // ==================== GAME LOOP ====================
-  _loop(ts) {
-    this.animFrame = requestAnimationFrame(ts2 => this._loop(ts2));
-
-    if (this.currentScreen !== 'game') {
-      this.lastTime = null;
-      return;
-    }
-
-    if (this.lastTime === null) {
-      this.renderer.resize();
-      this.lastTime = ts;
-    }
-    const dt = Math.min((ts - this.lastTime) / 1000, 0.05);
-    this.lastTime = ts;
+    // 2× simulation speed multiplier
+    const dt = Math.min(rawDt, 0.05) * 2;
 
     this._update(dt);
-    this._render(ts / 1000);
   }
 
   _update(dt) {
@@ -617,18 +906,12 @@ class Game {
     if (this.isRunning && !this.won) {
       this.levelTime += dt;
 
-      // Update moving obstacles
       updateMovingObstacles(this.obstacles, dt);
-
-      // Physics
       stepPhysics(this.ball, this.drawnPoints, this.obstacles, dt);
 
       // Trail
       this.trail.push({ x: this.ball.x, y: this.ball.y });
       if (this.trail.length > TRAIL_LENGTH) this.trail.shift();
-
-      // Particles
-      this.particles.update(dt);
 
       // Win check
       if (isAtTarget(this.ball, this.target)) {
@@ -636,7 +919,7 @@ class Game {
         return;
       }
 
-      // Stuck check
+      // Stuck timer
       const speed = Math.hypot(this.ball.vx, this.ball.vy);
       if (speed < 25) this.stuckTimer += dt;
       else this.stuckTimer = 0;
@@ -649,8 +932,6 @@ class Game {
         this._onFail('Ball got stuck. Try again!');
         return;
       }
-    } else if (!this.isRunning) {
-      this.particles.update(dt);
     }
   }
 
@@ -658,9 +939,13 @@ class Game {
     this.won       = true;
     this.isRunning = false;
     markLevelComplete(this.state, this.currentIdx);
-    this.particles.emit(this.target.x, this.target.y, 40);
 
-    const lvl = LEVELS[this.currentIdx];
+    // Trigger Phaser particle burst
+    if (this._scene) {
+      this._scene.emitBurst(this.target.x, this.target.y, 60);
+    }
+
+    const lvl      = LEVELS[this.currentIdx];
     document.getElementById('win-level-name').textContent = `${lvl.id} · ${lvl.name}`;
 
     const attempts = this.state.attempts[this.currentIdx] || 1;
@@ -670,43 +955,21 @@ class Game {
     const isLast = this.currentIdx >= LEVELS.length - 1;
     document.getElementById('btn-next-level').style.display = isLast ? 'none' : '';
 
-    setTimeout(() => { this._showOverlay('win'); this._buildLevelGrid(); }, 800);
+    setTimeout(() => {
+      this._showOverlay('win');
+      this._buildLevelGrid();
+    }, 800);
   }
 
   _onFail(msg) {
-    this.isRunning  = false;
-    this.trail      = [];
-    const lvl       = this._levelDef;
-    // Restore ball to start without clearing the drawn line
-    this.ball       = {
-      x:  lvl.ball.x, y:  lvl.ball.y,
-      vx: lvl.ball.vx || 0, vy: lvl.ball.vy || 0,
-      r:  BALL_RADIUS,
-    };
-    this.obstacles  = cloneObstacles(lvl.obstacles);
-    this.stuckTimer = 0;
+    this.isRunning   = false;
+    this.trail       = [];
+    this.drawnPoints = [];
+    const lvl        = this._levelDef;
+    this.ball        = { x: lvl.ball.x, y: lvl.ball.y, vx: lvl.ball.vx || 0, vy: lvl.ball.vy || 0, r: BALL_RADIUS };
+    this.obstacles   = cloneObstacles(lvl.obstacles);
+    this.stuckTimer  = 0;
     this._setStatus(lvl.hint || 'Adjust your line and try again.');
-  }
-
-  // ==================== RENDER ====================
-  _render(t) {
-    const r = this.renderer;
-    r.clear();
-
-    if (!this.ball) return;
-
-    r.drawObstacles(this.obstacles, t);
-    r.drawTarget(this.target, t);
-
-    // Show ghost ball position before launch
-    if (!this.isRunning && !this.won) {
-      r.drawBallStart(this._levelDef.ball);
-    }
-
-    r.drawLine(this.drawnPoints, this.isDrawing);
-    r.drawTrail(this.trail);
-    r.drawBall(this.ball, t);
-    r.drawParticles(this.particles.list);
   }
 }
 

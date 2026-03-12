@@ -39,7 +39,7 @@ export const LEVELS = [
     ball: { x: 80, y: 460, vx: 200, vy: -420 },
     target: { x: 700, y: 80, r: 30 },
     obstacles: [
-      { type: 'rect', x: 350, y: 0, w: 18, h: 340, color: '#4a4a7a' },
+      { type: 'rect', x: 350, y: 0, w: 18, h: 260, color: '#4a4a7a' },
     ],
     hint: "The ball is launched upward — guide it past the wall!",
   },
