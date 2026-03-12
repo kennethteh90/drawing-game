@@ -36,8 +36,9 @@ html, body {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  /* Prevent Android edge-swipe back/forward gestures from interfering */
-  overscroll-behavior: none;
+  /* Block horizontal edge-swipe back/forward on Android without affecting
+     vertical touch release (overscroll:none on Y can swallow pointerup) */
+  overscroll-behavior-x: none;
 }
 
 /* ==================== SCREENS ==================== */

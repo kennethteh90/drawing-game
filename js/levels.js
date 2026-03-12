@@ -67,7 +67,7 @@ export const LEVELS = [
     target: { x: 680, y: 460, r: 32 },
     obstacles: [
       { type: 'rect', x: 0,   y: 260, w: 460, h: 18 },
-      { type: 'rect', x: 460, y: 80,  w: 18,  h: 160 },  // bottom at y=240, 8px above ball path
+      { type: 'rect', x: 460, y: 80,  w: 18,  h: 140 },  // bottom at y=220, 28px above ball path
     ],
     hint: "L-shaped wall — guide the ball to the right before it reaches the corner!",
   },
