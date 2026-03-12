@@ -140,20 +140,20 @@ class GameScene extends Phaser.Scene {
     // ---- Phaser 3.60+ postFX — GPU-based glow & bloom ----
     // Applied once at setup; GPU handles the rest every frame at zero CPU cost.
 
-    // Pink glow on the ball Graphics layer (used for ghost / trail halos)
-    this.ballGfx.postFX.addGlow(0xff6b9d, 16, 0, false, 0.1, 16);
+    // Pink glow on the ball Graphics layer (ghost / trail halos)
+    this.ballGfx.postFX.addGlow(0xff6b9d, 12, 0, false, 0.1, 8);
 
-    // Ball Image also gets the pink glow so the sprite pops
-    this._ballImage.postFX.addGlow(0xff6b9d, 16, 0, false, 0.1, 16);
+    // Ball Image glow — most visually impactful, keep quality reasonable
+    this._ballImage.postFX.addGlow(0xff6b9d, 14, 0, false, 0.1, 10);
 
     // Cyan glow on the drawn line
-    this.lineGfx.postFX.addGlow(0x00f5ff, 12, 0, false, 0.1, 12);
+    this.lineGfx.postFX.addGlow(0x00f5ff, 10, 0, false, 0.1, 8);
 
-    // Purple glow on the obstacles/target layer
-    this.gfx.postFX.addGlow(0x6c63ff, 6, 0, false, 0.1, 8);
+    // Purple glow on the obstacles/target layer — lightest pass
+    this.gfx.postFX.addGlow(0x6c63ff, 4, 0, false, 0.1, 6);
 
-    // Subtle screen-wide bloom — makes bright spots bleed light naturally
-    this.cameras.main.postFX.addBloom(0xffffff, 1, 1, 0.5, 1.2, 10);
+    // NOTE: camera.postFX.addBloom intentionally omitted — full-screen bloom
+    // is the single most expensive GPU pass and tanks mobile framerate.
   }
 
   // ---- Create a 64×64 RenderTexture for the ball ----

@@ -102,16 +102,17 @@ export const LEVELS = [
 
   {
     id: 8, name: "Staircase",
-    // Three descending shelves offset left-to-right.
-    // Draw a staircase ramp, or thread the ball along one side.
+    // Three descending shelves stepping right. Each shelf has a gap on its
+    // right end. Ball must bounce down each step in sequence.
+    // Shelf 3 ends at x=680 so the target at x=730 is reachable beyond it.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
-    target: { x: 700, y: 460, r: 28 },
+    target: { x: 730, y: 490, r: 28 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 180, w: 280, h: 18 },
-      { type: 'rect', x: 260, y: 310, w: 280, h: 18 },
-      { type: 'rect', x: 520, y: 430, w: 280, h: 18 },
+      { type: 'rect', x: 0,   y: 180, w: 340, h: 18 },  // gap x > 340
+      { type: 'rect', x: 280, y: 320, w: 340, h: 18 },  // gap x > 620
+      { type: 'rect', x: 540, y: 430, w: 160, h: 18 },  // gap x > 700 — does NOT reach wall
     ],
-    hint: "Three steps block the way — bounce the ball down each gap!",
+    hint: "Three steps block the way — give the ball rightward momentum to bounce down each gap!",
   },
 
   {
@@ -131,32 +132,35 @@ export const LEVELS = [
 
   {
     id: 10, name: "Zigzag",
-    // Ball fires right quickly. Two long shelves offset alternately.
-    // Draw a deflector to send it down through each gap.
-    ball: { x: 80, y: 60, vx: 280, vy: 0 },
-    target: { x: 100, y: 460, r: 28 },
+    // Ball starts top-right. Shelf 1 has a gap on the left; shelf 2 has a
+    // gap on the right. Draw a ramp to send the ball left through shelf 1's
+    // gap — it then bounces off the left wall and crosses to the right gap
+    // of shelf 2, reaching the star.
+    ball: { x: 600, y: 60, vx: 0, vy: 0 },
+    target: { x: 700, y: 460, r: 28 },
     obstacles: [
-      { type: 'rect', x: 180, y: 190, w: 620, h: 18 },
-      { type: 'rect', x: 0,   y: 370, w: 620, h: 18 },
+      { type: 'rect', x: 180, y: 200, w: 620, h: 18 },  // gap x < 180
+      { type: 'rect', x: 0,   y: 360, w: 620, h: 18 },  // gap x > 620
     ],
-    hint: "Ball flies right — zigzag it through the gaps in the two shelves!",
+    hint: "Draw a ramp to send the ball left, bounce it off the wall, then let it fly right to the star!",
   },
 
   // ─── GROUP 3: Medium (11–15) — Multiple obstacles, tighter spaces ───
 
   {
     id: 11, name: "The Funnel",
-    // Converging walls narrow toward the center. Target sits in middle.
-    // Draw a line near the ball to give it just enough lateral push.
-    ball: { x: 400, y: 60, vx: 0, vy: 0 },
+    // Ball starts on the left side; two nested rings of shelves narrow the
+    // center corridor. Draw a ramp to deflect the ball through both gaps
+    // and into the target at the bottom of the funnel.
+    ball: { x: 120, y: 60, vx: 0, vy: 0 },
     target: { x: 400, y: 480, r: 26 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 160, w: 260, h: 18 },
-      { type: 'rect', x: 540, y: 160, w: 260, h: 18 },
-      { type: 'rect', x: 0,   y: 320, w: 160, h: 18 },
-      { type: 'rect', x: 640, y: 320, w: 160, h: 18 },
+      { type: 'rect', x: 0,   y: 160, w: 280, h: 18 },  // outer left  — gap x > 280
+      { type: 'rect', x: 520, y: 160, w: 280, h: 18 },  // outer right — gap x < 520
+      { type: 'rect', x: 0,   y: 320, w: 160, h: 18 },  // inner left  — gap x > 160
+      { type: 'rect', x: 640, y: 320, w: 160, h: 18 },  // inner right — gap x < 640
     ],
-    hint: "The walls funnel inward — keep the ball centered as it falls!",
+    hint: "The funnel narrows — draw a ramp to send the ball through the center gaps!",
   },
 
   {
@@ -176,16 +180,18 @@ export const LEVELS = [
   {
     id: 13, name: "Maze Runner",
     // A 2-bend maze. Ball must navigate two right-angle turns.
-    // Draw a line to push the ball into the correct channel.
+    // Shelf 1 covers the left; pass through the right gap (x > 480).
+    // Shelf 2 covers the right but stops at x = 660 — the target sits
+    // just past that right gap so the ball falls through to the star.
     ball: { x: 80, y: 60, vx: 0, vy: 0 },
     target: { x: 700, y: 460, r: 26 },
     obstacles: [
-      { type: 'rect', x: 0,   y: 200, w: 480, h: 18 },
+      { type: 'rect', x: 0,   y: 200, w: 480, h: 18 },  // gap x > 480
       { type: 'rect', x: 480, y: 0,   w: 18,  h: 200 },
-      { type: 'rect', x: 320, y: 360, w: 480, h: 18 },
-      { type: 'rect', x: 320, y: 200, w: 18,  h: 180 },
+      { type: 'rect', x: 320, y: 360, w: 340, h: 18 },  // ends at x=660 — gap x > 660
+      { type: 'rect', x: 320, y: 200, w: 18,  h: 168 },
     ],
-    hint: "Follow the maze — draw a deflector to navigate each bend!",
+    hint: "Follow the maze — deflect right through shelf 1, then right again past shelf 2!",
   },
 
   {
@@ -204,15 +210,16 @@ export const LEVELS = [
 
   {
     id: 15, name: "The Canyon",
-    // Two tall vertical walls create a canyon. Target is inside the
-    // canyon on the right. Ball starts outside left.
-    ball: { x: 120, y: 60, vx: 0, vy: 0 },
-    target: { x: 680, y: 440, r: 26 },
+    // Both canyon walls start at y=120, leaving a clear opening at the top.
+    // Ball starts just left of the left wall — draw a ramp to arc the ball
+    // rightward so it drops through the open top into the canyon below.
+    ball: { x: 240, y: 60, vx: 0, vy: 0 },
+    target: { x: 400, y: 430, r: 26 },
     obstacles: [
-      { type: 'rect', x: 300, y: 0,   w: 18, h: 440 },
-      { type: 'rect', x: 500, y: 110, w: 18, h: 440 },
+      { type: 'rect', x: 300, y: 120, w: 18, h: 420 },
+      { type: 'rect', x: 500, y: 120, w: 18, h: 420 },
     ],
-    hint: "Draw a line to send the ball into the canyon gap — then let it fall!",
+    hint: "Both walls have an open top — draw a ramp to arc the ball in and drop it to the star!",
   },
 
   // ─── GROUP 4: Hard (16–20) — Moving obstacles, precision required ───
