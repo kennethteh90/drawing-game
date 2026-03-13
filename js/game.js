@@ -129,10 +129,17 @@ class GameScene extends Phaser.Scene {
     this._menuPulseT = 0;
 
     // Pointer input — forwarded to the controller
-    this.input.on('pointerdown',  ptr => this._onPointerDown(ptr));
-    this.input.on('pointermove',  ptr => this._onPointerMove(ptr));
-    this.input.on('pointerup',    ptr => this._onPointerUp(ptr));
+    this.input.on('pointerdown',      ptr => this._onPointerDown(ptr));
+    this.input.on('pointermove',      ptr => this._onPointerMove(ptr));
+    this.input.on('pointerup',        ptr => this._onPointerUp(ptr));
     this.input.on('pointerupoutside', ptr => this._onPointerUp(ptr));
+
+    // Native fallback: stylus lifts and Android back-gesture interception
+    // both fire touchcancel instead of pointerup — Phaser never sees these.
+    // A document-level listener catches them and completes the draw stroke.
+    const handleCancel = () => { if (this._ctrl) this._ctrl.onPointerUp(); };
+    document.addEventListener('touchcancel', handleCancel, { passive: true });
+    document.addEventListener('touchend',    handleCancel, { passive: true });
 
     // Listen for resize so we redraw the background
     this.scale.on('resize', () => this._drawBackground());
@@ -830,6 +837,9 @@ class Game {
   // ---- pointer input handlers (called by Phaser scene) ----
   onPointerDown(px, py) {
     if (this.currentScreen !== 'game') return;
+    // Ignore touches starting in Android's back-gesture edge zone (~5% each side)
+    const edgeGuard = this._scene.scale.width * 0.05;
+    if (px < edgeGuard || px > this._scene.scale.width - edgeGuard) return;
     if (!this.isRunning && !this.won) {
       const p = this._scene.toLogical(px, py);
       // Don't start drawing inside a wall
