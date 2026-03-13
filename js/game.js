@@ -679,6 +679,7 @@ class Game {
   constructor() {
     this.state      = loadState();
     this.currentIdx = this.state.currentLevel || 0;
+    this._settings  = this._loadSettings();
 
     // Game state
     this.ball         = null;
@@ -834,6 +835,29 @@ class Game {
     document.getElementById('status-text').textContent = text;
   }
 
+  // ---- Settings persistence ----
+  _loadSettings() {
+    try {
+      const raw = localStorage.getItem('drawbounce_settings_v1');
+      if (raw) return { gravityMult: 1.0, simSpeed: 2.0, ...JSON.parse(raw) };
+    } catch (_) {}
+    return { gravityMult: 1.0, simSpeed: 2.0 };
+  }
+
+  _saveSettings() {
+    try { localStorage.setItem('drawbounce_settings_v1', JSON.stringify(this._settings)); } catch (_) {}
+  }
+
+  _syncSettingsUI() {
+    const gSlider = document.getElementById('setting-gravity');
+    const sSlider = document.getElementById('setting-speed');
+    if (!gSlider) return;
+    gSlider.value = this._settings.gravityMult;
+    sSlider.value = this._settings.simSpeed;
+    document.getElementById('val-gravity').textContent = (+this._settings.gravityMult).toFixed(1) + '×';
+    document.getElementById('val-speed').textContent   = (+this._settings.simSpeed).toFixed(1) + '×';
+  }
+
   // ---- pointer input handlers (called by Phaser scene) ----
   onPointerDown(px, py) {
     if (this.currentScreen !== 'game') return;
@@ -920,6 +944,36 @@ class Game {
       this._resetLevel();
     });
 
+    document.getElementById('btn-settings').addEventListener('click', () => {
+      this._pausedFromRunning = this.isRunning;
+      if (this.isRunning) this.isRunning = false;
+      this._syncSettingsUI();
+      this._showOverlay('settings');
+    });
+
+    document.getElementById('btn-settings-done').addEventListener('click', () => {
+      this._hideOverlays();
+      if (this._pausedFromRunning) this.isRunning = true;
+    });
+
+    document.getElementById('btn-settings-defaults').addEventListener('click', () => {
+      this._settings = { gravityMult: 1.0, simSpeed: 2.0 };
+      this._saveSettings();
+      this._syncSettingsUI();
+    });
+
+    document.getElementById('setting-gravity').addEventListener('input', e => {
+      this._settings.gravityMult = parseFloat(e.target.value);
+      document.getElementById('val-gravity').textContent = (+this._settings.gravityMult).toFixed(1) + '×';
+      this._saveSettings();
+    });
+
+    document.getElementById('setting-speed').addEventListener('input', e => {
+      this._settings.simSpeed = parseFloat(e.target.value);
+      document.getElementById('val-speed').textContent = (+this._settings.simSpeed).toFixed(1) + '×';
+      this._saveSettings();
+    });
+
     // Pause overlay
     document.getElementById('btn-resume').addEventListener('click', () => {
       this._hideOverlays();
@@ -969,10 +1023,7 @@ class Game {
   // ---- phaserUpdate — called every Phaser frame via scene.update ----
   phaserUpdate(rawDt) {
     if (this.currentScreen !== 'game') return;
-
-    // 2× simulation speed multiplier
-    const dt = Math.min(rawDt, 0.05) * 2;
-
+    const dt = Math.min(rawDt, 0.05) * this._settings.simSpeed;
     this._update(dt);
   }
 
@@ -983,7 +1034,7 @@ class Game {
       this.levelTime += dt;
 
       updateMovingObstacles(this.obstacles, dt);
-      stepPhysics(this.ball, this.drawnPoints, this.obstacles, dt);
+      stepPhysics(this.ball, this.drawnPoints, this.obstacles, dt, this._settings.gravityMult);
 
       // Trail
       this.trail.push({ x: this.ball.x, y: this.ball.y });

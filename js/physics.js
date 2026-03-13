@@ -140,12 +140,12 @@ export function updateMovingObstacles(obstacles, dt) {
 }
 
 // ---- Main physics step ----
-export function stepPhysics(ball, drawnPoints, obstacles, dt) {
+export function stepPhysics(ball, drawnPoints, obstacles, dt, gravityMult = 1) {
   const subDt = Math.min(dt, 0.033) / SUBSTEPS;
 
   for (let s = 0; s < SUBSTEPS; s++) {
     // Integrate
-    ball.vy += GRAVITY * subDt;
+    ball.vy += GRAVITY * gravityMult * subDt;
     ball.x  += ball.vx * subDt;
     ball.y  += ball.vy * subDt;
 
