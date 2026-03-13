@@ -134,12 +134,32 @@ class GameScene extends Phaser.Scene {
     this.input.on('pointerup',        ptr => this._onPointerUp(ptr));
     this.input.on('pointerupoutside', ptr => this._onPointerUp(ptr));
 
-    // Native fallback: stylus lifts and Android back-gesture interception
-    // both fire touchcancel instead of pointerup — Phaser never sees these.
-    // A document-level listener catches them and completes the draw stroke.
-    const handleCancel = () => { if (this._ctrl) this._ctrl.onPointerUp(); };
-    document.addEventListener('touchcancel', handleCancel, { passive: true });
-    document.addEventListener('touchend',    handleCancel, { passive: true });
+    // Canvas-level native touch fallbacks (more targeted than document-level).
+    // Must run after Phaser has created the canvas element.
+    const canvas = this.sys.canvas;
+
+    // Block touches that start in Android's back-gesture edge zone.
+    // passive:false is required so we can call preventDefault().
+    canvas.addEventListener('touchstart', (e) => {
+      for (const t of e.changedTouches) {
+        if (t.clientX < 44 || t.clientX > window.innerWidth - 44) {
+          e.preventDefault(); // stop the touch reaching Phaser or triggering back nav
+        }
+      }
+    }, { passive: false });
+
+    // touchend fallback — fires even when Phaser's pointerup is missed
+    // (e.g. fast lifts, stylus hover-exit). Scoped to canvas so button
+    // taps on the HUD never accidentally trigger this.
+    canvas.addEventListener('touchend', () => {
+      if (this._ctrl) this._ctrl.onPointerUp();
+    }, { passive: true });
+
+    // touchcancel = OS intercepted the gesture (back swipe, palm rejection).
+    // Cancel the in-progress draw without launching the ball.
+    canvas.addEventListener('touchcancel', () => {
+      if (this._ctrl) this._ctrl.onDrawCancel();
+    }, { passive: true });
 
     // Listen for resize so we redraw the background
     this.scale.on('resize', () => this._drawBackground());
@@ -909,6 +929,13 @@ class Game {
     this.isDrawing = false;
   }
 
+  // Called on touchcancel (OS gesture interception, palm rejection, etc.)
+  // Silently aborts the draw without launching the ball.
+  onDrawCancel() {
+    this.isDrawing   = false;
+    this.drawnPoints = [];
+  }
+
   // ---- UI bindings ----
   _bindUI() {
     // Menu
@@ -1127,25 +1154,26 @@ window.addEventListener('DOMContentLoaded', () => {
   history.pushState({ inGame: true }, '');
 
   window.addEventListener('popstate', () => {
-    // Always push a new entry to keep the trap active
+    // Keep the history trap alive so we never actually navigate away.
     history.pushState({ inGame: true }, '');
 
-    // Route the back action contextually
+    // If the ball is running or the player is mid-draw, the back gesture was
+    // almost certainly accidental. The touchcancel listener already cleaned up
+    // the draw state — don't compound it by also showing the pause screen.
+    if (game.isRunning || game.isDrawing) return;
+
+    // Otherwise route contextually (hardware back button, etc.)
     const overlays = [...document.querySelectorAll('.overlay')].filter(
       el => !el.classList.contains('hidden')
     );
     if (overlays.length > 0) {
-      // Dismiss any open overlay
       game._hideOverlays();
       if (game._pausedFromRunning) game.isRunning = true;
     } else if (game.currentScreen === 'game') {
-      // In-game: treat as pause
-      game._pausedFromRunning = game.isRunning;
-      if (game.isRunning) game.isRunning = false;
+      game._pausedFromRunning = false;
       game._showOverlay('pause');
     } else if (game.currentScreen === 'levels') {
       game._showScreen('menu');
     }
-    // On menu screen: do nothing (stay in app)
   });
 });
