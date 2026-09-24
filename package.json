@@ -8,6 +8,6 @@
     "start": "npx serve . -p 3000"
   },
   "devDependencies": {
-    "serve": "^14.2.3"
+    "serve": "^14.2.6"
   }
 }
